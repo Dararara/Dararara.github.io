@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>扫雷 Minesweeper · 小游戏合集</title>
+<link rel="stylesheet" href="./common.css">
+<style>
+  .board-scroll {
+    overflow-x: auto;
+    padding: 14px 0;
+  }
+  .ms-board {
+    --cell: 30px;
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 9), var(--cell));
+    gap: 2px;
+    width: max-content;
+    margin: 0 auto;
+    touch-action: manipulation;
+  }
+  .cell {
+    width: var(--cell);
+    height: var(--cell);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel-2);
+    border-radius: 3px;
+    font-size: calc(var(--cell) * 0.56);
+    font-weight: 600;
+    line-height: 1;
+    color: var(--dim);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.1s ease;
+  }
+  .cell:hover:not(.open) {
+    background: #2c3238;
+  }
+  .cell.open {
+    background: #171b1f;
+    cursor: default;
+  }
+  .cell.open.blank {
+    background: #14171a;
+  }
+  .cell.flag {
+    color: var(--accent);
+  }
+  .cell.mine {
+    background: #4a2020;
+    color: var(--danger);
+  }
+  .cell.mine.hit {
+    background: #7a2b26;
+  }
+  .cell.open.wrong {
+    background: #3a2a1a;
+    color: var(--accent-dim);
+  }
+  .n1 { color: #5aa9f0; }
+  .n2 { color: #5cc46a; }
+  .n3 { color: #e5794f; }
+  .n4 { color: #a97fd6; }
+  .n5 { color: #dcc23a; }
+  .n6 { color: #41b8ae; }
+  .n7 { color: #c8ccd0; }
+  .n8 { color: #8b9196; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <a class="back" href="./"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>返回合集</a>
+    <span class="brand">Game 04 / Minesweeper</span>
+  </div>
+
+  <h1 class="title">扫雷 <span class="en">MINESWEEPER</span></h1>
+  <p class="sub">数字表示周围八格里的雷数。第一次点击永远安全。</p>
+
+  <div class="hud">
+    <div class="hud-cell"><span class="hud-label">剩余雷数</span><span class="hud-value is-accent" id="minesLeft">10</span></div>
+    <div class="hud-cell"><span class="hud-label">用时</span><span class="hud-value" id="time">0</span></div>
+    <div class="hud-cell"><span class="hud-label">难度</span><span class="hud-value" id="levelName" style="font-size:16px">初级</span></div>
+    <div class="hud-cell"><span class="hud-label">最佳</span><span class="hud-value" id="best" style="font-size:16px">--</span></div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn is-active" data-level="easy">初级 9×9</button>
+    <button class="btn" data-level="medium">中级 16×16</button>
+    <button class="btn" data-level="hard">高级 30×16</button>
+    <button class="btn btn-primary" id="restart">重开</button>
+    <button class="btn" id="flagMode">标旗模式：关</button>
+  </div>
+
+  <div class="stage" style="padding:0 14px">
+    <div class="board-scroll">
+      <div class="ms-board" id="board" role="grid" aria-label="扫雷棋盘"></div>
+    </div>
+  </div>
+
+  <div class="hint">
+    左键翻开 · 右键插旗 · 点击已翻开的数字可快速展开周围（需要旗数正确）<br>
+    手机上：点按翻开，长按 0.4 秒插旗，也可以打开上面的「标旗模式」逐个标旗
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var LEVELS = {
+    easy: { cols: 9, rows: 9, mines: 10, cell: 34, name: "初级" },
+    medium: { cols: 16, rows: 16, mines: 40, cell: 28, name: "中级" },
+    hard: { cols: 30, rows: 16, mines: 99, cell: 24, name: "高级" }
+  };
+
+  var boardEl = document.getElementById("board");
+  var elMines = document.getElementById("minesLeft");
+  var elTime = document.getElementById("time");
+  var elLevel = document.getElementById("levelName");
+  var elBest = document.getElementById("best");
+  var elFlagMode = document.getElementById("flagMode");
+
+  var cols, rows, mineCount, cellEls, mine, adj, revealed, flagged;
+  var state, flagsUsed, elapsed, timer, firstClick, levelKey, flagMode;
+
+  function bestKey() { return "game.minesweeper.best." + levelKey; }
+
+  function readBest() {
+    try {
+      var v = parseInt(localStorage.getItem(bestKey()) || "0", 10) || 0;
+      return v > 0 ? v : 0;
+    } catch (e) { return 0; }
+  }
+
+  function writeBest(sec) {
+    try {
+      var cur = readBest();
+      if (!cur || sec < cur) { localStorage.setItem(bestKey(), String(sec)); return true; }
+    } catch (e) {}
+    return false;
+  }
+
+  function cellSize(cfg) {
+    var avail = Math.min(window.innerWidth - 56, 690);
+    var need = cfg.cols * (cfg.cell + 2);
+    var size = cfg.cell;
+    if (need > avail) size = Math.floor(avail / cfg.cols) - 2;
+    return Math.max(17, size);
+  }
+
+  function make2D(v) {
+    var a = [];
+    for (var y = 0; y < rows; y++) {
+      var row = [];
+      for (var x = 0; x < cols; x++) row.push(v);
+      a.push(row);
+    }
+    return a;
+  }
+
+  function newGame() {
+    var cfg = LEVELS[levelKey];
+    cols = cfg.cols;
+    rows = cfg.rows;
+    mineCount = cfg.mines;
+
+    mine = make2D(false);
+    adj = make2D(0);
+    revealed = make2D(false);
+    flagged = make2D(false);
+    cellEls = [];
+
+    state = "ready";
+    flagsUsed = 0;
+    elapsed = 0;
+    firstClick = true;
+    stopTimer();
+
+    buildBoard(cfg);
+    syncHud();
+  }
+
+  function buildBoard(cfg) {
+    boardEl.innerHTML = "";
+    boardEl.style.setProperty("--cols", cols);
+    boardEl.style.setProperty("--cell", cellSize(cfg) + "px");
+
+    var frag = document.createDocumentFragment();
+    for (var y = 0; y < rows; y++) {
+      var rowEls = [];
+      for (var x = 0; x < cols; x++) {
+        var d = document.createElement("div");
+        d.className = "cell";
+        d.setAttribute("data-x", x);
+        d.setAttribute("data-y", y);
+        frag.appendChild(d);
+        rowEls.push(d);
+      }
+      cellEls.push(rowEls);
+    }
+    boardEl.appendChild(frag);
+  }
+
+  function neighbors(x, y) {
+    var out = [];
+    for (var dy = -1; dy <= 1; dy++) {
+      for (var dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        var nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) out.push({ x: nx, y: ny });
+      }
+    }
+    return out;
+  }
+
+  function placeMines(sx, sy) {
+    var safe = {};
+    safe[sy * cols + sx] = true;
+    neighbors(sx, sy).forEach(function (n) { safe[n.y * cols + n.x] = true; });
+
+    var pool = [];
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        if (!safe[y * cols + x]) pool.push({ x: x, y: y });
+      }
+    }
+
+    var total = Math.min(mineCount, pool.length);
+    for (var i = 0; i < total; i++) {
+      var j = i + Math.floor(Math.random() * (pool.length - i));
+      var t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+      mine[pool[i].y][pool[i].x] = true;
+    }
+
+    for (var yy = 0; yy < rows; yy++) {
+      for (var xx = 0; xx < cols; xx++) {
+        if (mine[yy][xx]) { adj[yy][xx] = -1; continue; }
+        var c = 0;
+        neighbors(xx, yy).forEach(function (n) { if (mine[n.y][n.x]) c++; });
+        adj[yy][xx] = c;
+      }
+    }
+  }
+
+  function startTimer() {
+    stopTimer();
+    timer = setInterval(function () {
+      elapsed++;
+      elTime.textContent = elapsed;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  function paint(x, y) {
+    var el = cellEls[y][x];
+    if (revealed[y][x]) {
+      if (mine[y][x]) {
+        el.className = "cell open mine";
+        el.textContent = "✳";
+      } else if (adj[y][x] > 0) {
+        el.className = "cell open n" + adj[y][x];
+        el.textContent = adj[y][x];
+      } else {
+        el.className = "cell open blank";
+        el.textContent = "";
+      }
+    } else if (flagged[y][x]) {
+      el.className = "cell flag";
+      el.textContent = "⚑";
+    } else {
+      el.className = "cell";
+      el.textContent = "";
+    }
+  }
+
+  function reveal(x, y) {
+    if (state === "won" || state === "lost") return;
+    if (flagged[y][x]) return;
+    if (revealed[y][x]) { chord(x, y); return; }
+
+    if (firstClick) {
+      firstClick = false;
+      state = "playing";
+      placeMines(x, y);
+      startTimer();
+    }
+
+    if (mine[y][x]) {
+      revealed[y][x] = true;
+      paint(x, y);
+      cellEls[y][x].classList.add("hit");
+      lose();
+      return;
+    }
+
+    flood(x, y);
+    checkWin();
+  }
+
+  function flood(sx, sy) {
+    var queue = [{ x: sx, y: sy }];
+    while (queue.length) {
+      var p = queue.shift();
+      var x = p.x, y = p.y;
+      if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
+      if (revealed[y][x] || flagged[y][x] || mine[y][x]) continue;
+      revealed[y][x] = true;
+      paint(x, y);
+      if (adj[y][x] === 0) {
+        neighbors(x, y).forEach(function (n) {
+          if (!revealed[n.y][n.x] && !flagged[n.y][n.x]) queue.push(n);
+        });
+      }
+    }
+  }
+
+  function toggleFlag(x, y) {
+    if (state === "won" || state === "lost") return;
+    if (revealed[y][x]) return;
+    flagged[y][x] = !flagged[y][x];
+    flagsUsed += flagged[y][x] ? 1 : -1;
+    paint(x, y);
+    syncHud();
+  }
+
+  function chord(x, y) {
+    if (adj[y][x] <= 0) return;
+    var flags = 0;
+    var hidden = [];
+    neighbors(x, y).forEach(function (n) {
+      if (flagged[n.y][n.x]) flags++;
+      else if (!revealed[n.y][n.x]) hidden.push(n);
+    });
+    if (flags !== adj[y][x] || !hidden.length) return;
+
+    for (var i = 0; i < hidden.length; i++) {
+      var n = hidden[i];
+      if (mine[n.y][n.x]) {
+        revealed[n.y][n.x] = true;
+        paint(n.x, n.y);
+        cellEls[n.y][n.x].classList.add("hit");
+        lose();
+        return;
+      }
+    }
+    hidden.forEach(function (n) { if (!revealed[n.y][n.x]) flood(n.x, n.y); });
+    checkWin();
+  }
+
+  function lose() {
+    state = "lost";
+    stopTimer();
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        if (mine[y][x] && !flagged[y][x] && !revealed[y][x]) {
+          revealed[y][x] = true;
+          paint(x, y);
+        } else if (!mine[y][x] && flagged[y][x]) {
+          revealed[y][x] = true;
+          paint(x, y);
+          cellEls[y][x].classList.remove("flag");
+          cellEls[y][x].classList.add("wrong");
+          cellEls[y][x].textContent = "✕";
+        }
+      }
+    }
+    elTime.textContent = elapsed;
+  }
+
+  function checkWin() {
+    var opened = 0;
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) if (revealed[y][x]) opened++;
+    }
+    if (opened !== cols * rows - mineCount) return;
+
+    state = "won";
+    stopTimer();
+    for (var yy = 0; yy < rows; yy++) {
+      for (var xx = 0; xx < cols; xx++) {
+        if (mine[yy][xx] && !flagged[yy][xx]) {
+          flagged[yy][xx] = true;
+          paint(xx, yy);
+        }
+      }
+    }
+    flagsUsed = mineCount;
+    writeBest(elapsed);
+    syncHud();
+  }
+
+  function syncHud() {
+    elMines.textContent = Math.max(0, mineCount - flagsUsed);
+    elTime.textContent = elapsed;
+    elLevel.textContent = LEVELS[levelKey].name;
+    if (state === "lost") elMines.classList.add("is-danger");
+    else elMines.classList.remove("is-danger");
+    var b = readBest();
+    elBest.textContent = b ? b + " 秒" : "--";
+  }
+
+  var pd = null;
+
+  function cellFrom(target) {
+    while (target && target !== boardEl) {
+      if (target.classList && target.classList.contains("cell")) return target;
+      target = target.parentNode;
+    }
+    return null;
+  }
+
+  boardEl.addEventListener("pointerdown", function (e) {
+    var cell = cellFrom(e.target);
+    if (!cell) return;
+    pd = {
+      x: parseInt(cell.getAttribute("data-x"), 10),
+      y: parseInt(cell.getAttribute("data-y"), 10),
+      t: Date.now(),
+      touch: e.pointerType === "touch",
+      fired: false,
+      timer: null
+    };
+    if (pd.touch) {
+      pd.timer = setTimeout(function () {
+        if (!pd) return;
+        pd.fired = true;
+        toggleFlag(pd.x, pd.y);
+      }, 400);
+    }
+  });
+
+  boardEl.addEventListener("pointerup", function (e) {
+    if (!pd) return;
+    if (pd.timer) clearTimeout(pd.timer);
+    var cell = cellFrom(e.target);
+    var same = cell && parseInt(cell.getAttribute("data-x"), 10) === pd.x && parseInt(cell.getAttribute("data-y"), 10) === pd.y;
+    var quick = Date.now() - pd.t < 700;
+    var fired = pd.fired;
+    var px = pd.x, py = pd.y;
+    pd = null;
+
+    if (fired || !same || !quick) return;
+    if (flagMode) toggleFlag(px, py);
+    else reveal(px, py);
+  });
+
+  ["pointercancel", "pointerleave"].forEach(function (ev) {
+    boardEl.addEventListener(ev, function () {
+      if (pd && pd.timer) clearTimeout(pd.timer);
+      if (ev === "pointercancel") pd = null;
+    });
+  });
+
+  boardEl.addEventListener("contextmenu", function (e) {
+    e.preventDefault();
+    var cell = cellFrom(e.target);
+    if (!cell) return;
+    if (pd && pd.timer) clearTimeout(pd.timer);
+    pd = null;
+    toggleFlag(parseInt(cell.getAttribute("data-x"), 10), parseInt(cell.getAttribute("data-y"), 10));
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".toolbar .btn[data-level]"), function (b) {
+    b.addEventListener("click", function () {
+      levelKey = b.getAttribute("data-level");
+      Array.prototype.forEach.call(document.querySelectorAll(".toolbar .btn[data-level]"), function (o) {
+        o.classList.toggle("is-active", o === b);
+      });
+      newGame();
+    });
+  });
+
+  document.getElementById("restart").addEventListener("click", newGame);
+
+  elFlagMode.addEventListener("click", function () {
+    flagMode = !flagMode;
+    elFlagMode.textContent = "标旗模式：" + (flagMode ? "开" : "关");
+    elFlagMode.classList.toggle("is-active", flagMode);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "r" || e.key === "R") newGame();
+    if (e.key === "f" || e.key === "F") elFlagMode.click();
+  });
+
+  levelKey = "easy";
+  flagMode = false;
+  newGame();
+})();
+</script>
+</body>
+</html>

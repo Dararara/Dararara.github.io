@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>2048 · 小游戏合集</title>
+<link rel="stylesheet" href="./common.css">
+<style>
+  .board {
+    --cell: 74px;
+    --gap: 12px;
+    --pad: 12px;
+    position: relative;
+    padding: var(--pad);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    margin: 0 auto 16px;
+    width: max-content;
+    touch-action: none;
+    user-select: none;
+  }
+  .slots {
+    display: grid;
+    grid-template-columns: repeat(4, var(--cell));
+    grid-template-rows: repeat(4, var(--cell));
+    gap: var(--gap);
+  }
+  .slot {
+    background: rgba(255, 255, 255, 0.035);
+    border-radius: 6px;
+  }
+  .tile {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--cell);
+    height: var(--cell);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    transition: transform 0.1s ease;
+    background: #333a40;
+    color: #e7e7e4;
+  }
+  .tile.small { font-size: 20px; }
+  .tile.tiny { font-size: 16px; }
+
+  .tile[data-v="2"] { background: #303740; color: #c9cfd4; }
+  .tile[data-v="4"] { background: #3b4550; color: #dfe4e8; }
+  .tile[data-v="8"] { background: #4a6ea8; color: #fff; }
+  .tile[data-v="16"] { background: #3f7fd0; color: #fff; }
+  .tile[data-v="32"] { background: #c96b34; color: #fff; }
+  .tile[data-v="64"] { background: #dd5f2b; color: #fff; }
+  .tile[data-v="128"] { background: #c99a2e; color: #fff; }
+  .tile[data-v="256"] { background: #d9ae32; color: #14161a; }
+  .tile[data-v="512"] { background: #e6c33c; color: #14161a; }
+  .tile[data-v="1024"] { background: #f2d94e; color: #14161a; }
+  .tile[data-v="2048"] { background: #ffd200; color: #14161a; }
+  .tile[data-v="big"] { background: #e5534b; color: #fff; }
+
+  .tile.is-new {
+    transition: none;
+    animation: tile-pop 0.14s ease;
+  }
+  .tile.is-merged {
+    animation: tile-merge 0.17s ease;
+  }
+  @keyframes tile-pop {
+    from { transform-origin: center; opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes tile-merge {
+    0% { filter: brightness(1); }
+    45% { filter: brightness(1.45); }
+    100% { filter: brightness(1); }
+  }
+
+  @media (max-width: 480px) {
+    .board { --cell: 62px; --gap: 10px; --pad: 10px; }
+    .tile { font-size: 21px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <a class="back" href="./"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>返回合集</a>
+    <span class="brand">Game 03 / 2048</span>
+  </div>
+
+  <h1 class="title">2048 <span class="en">MERGE</span></h1>
+  <p class="sub">相同数字相撞即合并翻倍。凑出 2048 就算通关，之后还能继续玩。</p>
+
+  <div class="hud">
+    <div class="hud-cell"><span class="hud-label">Score</span><span class="hud-value is-accent" id="score">0</span></div>
+    <div class="hud-cell"><span class="hud-label">Best</span><span class="hud-value" id="best">0</span></div>
+    <div class="hud-cell"><span class="hud-label">Max</span><span class="hud-value" id="max">2</span></div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn btn-primary" id="newGame">重新开始</button>
+    <button class="btn" id="undo">撤销一步</button>
+  </div>
+
+  <div class="board" id="board">
+    <div class="slots" id="slots"></div>
+    <div class="overlay" id="overlay" hidden>
+      <div class="overlay-title" id="ovTitle">游戏结束</div>
+      <div class="overlay-desc" id="ovDesc">按回车重来</div>
+    </div>
+  </div>
+
+  <div class="hint">
+    <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 或 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动 ·
+    <kbd>回车</kbd> 重新开始 · <kbd>Z</kbd> 撤销 · 手机上直接在棋盘上滑动
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SIZE = 4;
+  var BEST_KEY = "game.2048.best";
+  var UNDO_LIMIT = 5;
+
+  var boardEl = document.getElementById("board");
+  var slotsEl = document.getElementById("slots");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovDesc = document.getElementById("ovDesc");
+  var elScore = document.getElementById("score");
+  var elBest = document.getElementById("best");
+  var elMax = document.getElementById("max");
+
+  var grid, score, best, over, won, nextId, undoStack, pending = [], pendingTimer = null;
+
+  function emptyGrid() {
+    var g = [];
+    for (var y = 0; y < SIZE; y++) g.push(new Array(SIZE).fill(null));
+    return g;
+  }
+
+  function metrics() {
+    var cs = getComputedStyle(boardEl);
+    return {
+      pad: parseFloat(cs.getPropertyValue("--pad")) || 12,
+      cell: parseFloat(cs.getPropertyValue("--cell")) || 74,
+      gap: parseFloat(cs.getPropertyValue("--gap")) || 12
+    };
+  }
+
+  function layout(tile) {
+    var m = metrics();
+    var step = m.cell + m.gap;
+    tile.el.style.transform = "translate(" + (m.pad + tile.x * step) + "px," + (m.pad + tile.y * step) + "px)";
+  }
+
+  function relayoutAll() {
+    var tiles = [];
+    for (var y = 0; y < SIZE; y++) {
+      for (var x = 0; x < SIZE; x++) if (grid[y][x]) tiles.push(grid[y][x]);
+    }
+    tiles.forEach(function (t) {
+      t.el.style.transition = "none";
+      layout(t);
+    });
+    requestAnimationFrame(function () {
+      tiles.forEach(function (t) { t.el.style.transition = ""; });
+    });
+  }
+
+  function styleFor(tile) {
+    var v = tile.value;
+    tile.el.setAttribute("data-v", v > 2048 ? "big" : String(v));
+    tile.el.textContent = v;
+    tile.el.className = "tile" + (v >= 1024 ? " tiny" : (v >= 128 ? " small" : ""));
+  }
+
+  function createTile(x, y, value, isNew) {
+    var el = document.createElement("div");
+    var tile = { id: ++nextId, x: x, y: y, value: value, el: el };
+    styleFor(tile);
+    el.style.transition = "none";
+    layout(tile);
+    if (isNew) el.className += " is-new";
+    boardEl.appendChild(el);
+    if (isNew) {
+      requestAnimationFrame(function () { el.style.transition = ""; });
+      setTimeout(function () { el.classList.remove("is-new"); }, 150);
+    }
+    return tile;
+  }
+
+  function removeTile(tile) {
+    if (tile.el.parentNode) tile.el.parentNode.removeChild(tile.el);
+  }
+
+  function clearAll() {
+    Array.prototype.forEach.call(boardEl.querySelectorAll(".tile"), function (el) {
+      el.parentNode.removeChild(el);
+    });
+  }
+
+  function buildSlots() {
+    for (var i = 0; i < SIZE * SIZE; i++) {
+      var d = document.createElement("div");
+      d.className = "slot";
+      slotsEl.appendChild(d);
+    }
+  }
+
+  function flushPending() {
+    if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
+    var jobs = pending || [];
+    pending = [];
+    jobs.forEach(function (fn) { fn(); });
+  }
+
+  function schedule(fn) {
+    pending.push(fn);
+    if (!pendingTimer) pendingTimer = setTimeout(flushPending, 110);
+  }
+
+  function freeCells() {
+    var cells = [];
+    for (var y = 0; y < SIZE; y++) {
+      for (var x = 0; x < SIZE; x++) if (!grid[y][x]) cells.push({ x: x, y: y });
+    }
+    return cells;
+  }
+
+  function addRandom() {
+    var cells = freeCells();
+    if (!cells.length) return;
+    var c = cells[Math.floor(Math.random() * cells.length)];
+    var t = createTile(c.x, c.y, Math.random() < 0.9 ? 2 : 4, true);
+    grid[c.y][c.x] = t;
+  }
+
+  function buildLines(dir) {
+    var lines = [];
+    var x, y;
+    if (dir === "left" || dir === "right") {
+      for (y = 0; y < SIZE; y++) {
+        var row = [];
+        for (x = 0; x < SIZE; x++) row.push({ x: dir === "left" ? x : SIZE - 1 - x, y: y });
+        lines.push(row);
+      }
+    } else {
+      for (x = 0; x < SIZE; x++) {
+        var col = [];
+        for (y = 0; y < SIZE; y++) col.push({ x: x, y: dir === "up" ? y : SIZE - 1 - y });
+        lines.push(col);
+      }
+    }
+    return lines;
+  }
+
+  function resolve(tiles) {
+    var out = [], gained = 0, i = 0;
+    while (i < tiles.length) {
+      if (i + 1 < tiles.length && tiles[i].value === tiles[i + 1].value) {
+        out.push({ keep: tiles[i], absorb: tiles[i + 1], value: tiles[i].value * 2 });
+        gained += tiles[i].value * 2;
+        i += 2;
+      } else {
+        out.push({ keep: tiles[i], absorb: null, value: tiles[i].value });
+        i += 1;
+      }
+    }
+    return { out: out, gained: gained };
+  }
+
+  function snapshot() {
+    var vals = [];
+    for (var y = 0; y < SIZE; y++) {
+      var row = [];
+      for (var x = 0; x < SIZE; x++) row.push(grid[y][x] ? grid[y][x].value : 0);
+      vals.push(row);
+    }
+    return { vals: vals, score: score, won: won };
+  }
+
+  function move(dir) {
+    if (over) return;
+    flushPending();
+
+    var before = snapshot();
+    var newGrid = emptyGrid();
+    var moves = [], removals = [], merges = [];
+    var gained = 0, moved = false;
+
+    buildLines(dir).forEach(function (line) {
+      var tiles = [];
+      line.forEach(function (p) { if (grid[p.y][p.x]) tiles.push(grid[p.y][p.x]); });
+      if (!tiles.length) return;
+
+      var res = resolve(tiles);
+      res.out.forEach(function (item, idx) {
+        var target = line[idx];
+        if (item.keep.x !== target.x || item.keep.y !== target.y) moved = true;
+        item.keep.x = target.x;
+        item.keep.y = target.y;
+        item.keep.value = item.value;
+        newGrid[target.y][target.x] = item.keep;
+        moves.push(item.keep);
+
+        if (item.absorb) {
+          moved = true;
+          item.absorb.x = target.x;
+          item.absorb.y = target.y;
+          moves.push(item.absorb);
+          removals.push(item.absorb);
+          merges.push(item.keep);
+        }
+      });
+      gained += res.gained;
+    });
+
+    if (!moved) return;
+
+    grid = newGrid;
+    moves.forEach(layout);
+
+    removals.forEach(function (t) {
+      schedule(function () { removeTile(t); });
+    });
+
+    merges.forEach(function (t) {
+      schedule(function () {
+        styleFor(t);
+        t.el.classList.add("is-merged");
+        setTimeout(function () { t.el.classList.remove("is-merged"); }, 180);
+      });
+    });
+
+    score += gained;
+    undoStack.push(before);
+    while (undoStack.length > UNDO_LIMIT) undoStack.shift();
+
+    addRandom();
+    syncHud();
+
+    if (!won && maxValue() >= 2048) {
+      won = true;
+      setOverlay("达成 2048", "继续挑战更高的数字，或按回车重开", false);
+    } else if (!canMove()) {
+      gameOver();
+    }
+  }
+
+  function maxValue() {
+    var m = 0;
+    for (var y = 0; y < SIZE; y++) for (var x = 0; x < SIZE; x++) if (grid[y][x] && grid[y][x].value > m) m = grid[y][x].value;
+    return m;
+  }
+
+  function canMove() {
+    if (freeCells().length) return true;
+    for (var y = 0; y < SIZE; y++) {
+      for (var x = 0; x < SIZE; x++) {
+        var v = grid[y][x].value;
+        if (x + 1 < SIZE && grid[y][x + 1].value === v) return true;
+        if (y + 1 < SIZE && grid[y + 1][x].value === v) return true;
+      }
+    }
+    return false;
+  }
+
+  function gameOver() {
+    over = true;
+    if (score > best) { best = score; try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) {} }
+    syncHud();
+    setOverlay("游戏结束", "得分 " + score + " · 按回车重来", true);
+  }
+
+  function setOverlay(title, desc, danger) {
+    ovTitle.textContent = title;
+    ovTitle.className = "overlay-title" + (danger ? " is-danger" : "");
+    ovDesc.textContent = desc;
+    overlay.hidden = false;
+  }
+
+  function syncHud() {
+    elScore.textContent = score;
+    elBest.textContent = best;
+    elMax.textContent = maxValue() || 2;
+  }
+
+  function newGame() {
+    flushPending();
+    clearAll();
+    grid = emptyGrid();
+    score = 0;
+    over = false;
+    won = false;
+    nextId = 0;
+    undoStack = [];
+    overlay.hidden = true;
+    addRandom();
+    addRandom();
+    syncHud();
+  }
+
+  function undo() {
+    if (!undoStack.length) return;
+    flushPending();
+    var state = undoStack.pop();
+    clearAll();
+    grid = emptyGrid();
+    for (var y = 0; y < SIZE; y++) {
+      for (var x = 0; x < SIZE; x++) {
+        var v = state.vals[y][x];
+        if (v) grid[y][x] = createTile(x, y, v, false);
+      }
+    }
+    score = state.score;
+    won = state.won;
+    over = false;
+    overlay.hidden = true;
+    syncHud();
+  }
+
+  var keyMap = {
+    ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down",
+    a: "left", d: "right", w: "up", s: "down",
+    A: "left", D: "right", W: "up", S: "down"
+  };
+
+  document.addEventListener("keydown", function (e) {
+    if (keyMap[e.key]) {
+      e.preventDefault();
+      move(keyMap[e.key]);
+    } else if (e.key === "Enter") {
+      newGame();
+    } else if (e.key === "z" || e.key === "Z") {
+      undo();
+    }
+  });
+
+  var tsx = 0, tsy = 0, tracking = false;
+  boardEl.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) return;
+    tsx = e.touches[0].clientX;
+    tsy = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+
+  boardEl.addEventListener("touchmove", function (e) {
+    if (!tracking || e.touches.length !== 1) return;
+    var dx = e.touches[0].clientX - tsx;
+    var dy = e.touches[0].clientY - tsy;
+    if (Math.abs(dx) < 26 && Math.abs(dy) < 26) return;
+    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? "right" : "left");
+    else move(dy > 0 ? "down" : "up");
+    tracking = false;
+  }, { passive: true });
+
+  boardEl.addEventListener("touchend", function () { tracking = false; }, { passive: true });
+
+  document.getElementById("newGame").addEventListener("click", newGame);
+  document.getElementById("undo").addEventListener("click", undo);
+
+  overlay.addEventListener("click", function () {
+    if (won && !over) overlay.hidden = true;
+  });
+
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(relayoutAll, 120);
+  });
+
+  best = 0;
+  try { best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (e) { best = 0; }
+  buildSlots();
+  newGame();
+})();
+</script>
+</body>
+</html>

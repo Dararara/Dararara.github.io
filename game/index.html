@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>小游戏合集 · GAME COLLECTION</title>
+<link rel="stylesheet" href="./common.css">
+<style>
+  .hero {
+    margin-bottom: 30px;
+  }
+  .hero-title {
+    margin: 0 0 10px;
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.25;
+  }
+  .hero-title .en {
+    display: block;
+    color: var(--accent);
+    font-size: 14px;
+    letter-spacing: 0.32em;
+    font-weight: 400;
+    margin-top: 8px;
+  }
+  .hero-desc {
+    color: var(--dim);
+    font-size: 13px;
+    font-family: var(--sans);
+    line-height: 1.8;
+    max-width: 560px;
+    margin: 0;
+  }
+  .card {
+    position: relative;
+    overflow: hidden;
+  }
+  .card::after {
+    content: "";
+    position: absolute;
+    right: -18px;
+    bottom: -18px;
+    width: 76px;
+    height: 76px;
+    border: 1px solid rgba(255, 210, 0, 0.16);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .stats {
+    display: flex;
+    gap: 26px;
+    flex-wrap: wrap;
+    margin-top: 30px;
+    padding: 16px 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .stat-num {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--dim-2);
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <a class="back" href="../"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>返回博客</a>
+    <span class="brand">Game Collection / 4 Titles</span>
+  </div>
+
+  <div class="hero">
+    <h1 class="hero-title">小游戏合集<span class="en">ARCADE ARCHIVE</span></h1>
+    <p class="hero-desc">
+      四个纯前端实现的小游戏，没有任何依赖，不需要联网，打开就能玩。
+      键盘和触屏都支持，分数与纪录保存在你自己的浏览器里。
+    </p>
+  </div>
+
+  <div class="grid">
+    <a class="card" href="./snake.html">
+      <span class="card-no">GAME 01</span>
+      <span class="card-name">贪吃蛇<span class="en">SNAKE</span></span>
+      <span class="card-desc">20×20 的网格上不断变长，速度随得分越来越快，一条命走到黑。</span>
+      <span class="card-meta">
+        <span>方向键 / WASD</span>
+        <span>最高分 <strong data-best="snake">0</strong></span>
+      </span>
+    </a>
+
+    <a class="card" href="./tetris.html">
+      <span class="card-no">GAME 02</span>
+      <span class="card-name">俄罗斯方块<span class="en">TETRIS</span></span>
+      <span class="card-desc">七种方块、落点预览、幽灵提示，每消除十行升一级并加快下落。</span>
+      <span class="card-meta">
+        <span>方向键 / 空格硬降</span>
+        <span>最高分 <strong data-best="tetris">0</strong></span>
+      </span>
+    </a>
+
+    <a class="card" href="./g2048.html">
+      <span class="card-no">GAME 03</span>
+      <span class="card-name">2048<span class="en">MERGE</span></span>
+      <span class="card-desc">相同的数字相撞就合并翻倍，凑出 2048 算通关，还可以悔棋。</span>
+      <span class="card-meta">
+        <span>方向键 / 滑动</span>
+        <span>最高分 <strong data-best="g2048">0</strong></span>
+      </span>
+    </a>
+
+    <a class="card" href="./minesweeper.html">
+      <span class="card-no">GAME 04</span>
+      <span class="card-name">扫雷<span class="en">MINESWEEPER</span></span>
+      <span class="card-desc">三档难度，第一次点击永远安全，右键插旗，点数字快速展开。</span>
+      <span class="card-meta">
+        <span>左键 / 右键 / 长按</span>
+        <span>初级纪录 <strong data-best="minesweeper">--</strong></span>
+      </span>
+    </a>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><span class="stat-num" id="plays">0</span><span class="stat-label">本机游玩次数</span></div>
+    <div class="stat"><span class="stat-num">4</span><span class="stat-label">收录游戏</span></div>
+    <div class="stat"><span class="stat-num">0 KB</span><span class="stat-label">外部依赖</span></div>
+  </div>
+
+  <div class="hint" style="margin-top:22px">
+    所有数据只存在本机 localStorage，换设备或清缓存后会重置。
+  </div>
+
+  <div class="footer">
+    DARARARA.GITHUB.IO / GAME COLLECTION
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var KEYS = {
+    snake: { key: "game.snake.best", unit: " 分" },
+    tetris: { key: "game.tetris.best", unit: " 分" },
+    g2048: { key: "game.2048.best", unit: " 分" },
+    minesweeper: { key: "game.minesweeper.best.easy", unit: " 秒" }
+  };
+
+  function read(key) {
+    try { return parseInt(localStorage.getItem(key) || "0", 10) || 0; } catch (e) { return 0; }
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-best]"), function (el) {
+    var id = el.getAttribute("data-best");
+    var cfg = KEYS[id];
+    if (!cfg) return;
+    var v = read(cfg.key);
+    el.textContent = v > 0 ? v + cfg.unit : (id === "minesweeper" ? "--" : "0");
+  });
+
+  var visits = 0;
+  try {
+    visits = (parseInt(localStorage.getItem("game.visits") || "0", 10) || 0) + 1;
+    localStorage.setItem("game.visits", String(visits));
+  } catch (e) { visits = 1; }
+  document.getElementById("plays").textContent = visits;
+})();
+</script>
+</body>
+</html>
