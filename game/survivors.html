@@ -68,6 +68,14 @@
     pointer-events: none;
   }
 
+  /* 暗角：让画面中心保持可读，四周压暗以突出氛围 */
+  .vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0.46) 100%);
+  }
+
   /* 武器 / 被动 栏 */
   .loadout {
     display: flex;
@@ -304,6 +312,7 @@
   <div class="stage" style="padding:0;background:transparent;border:none">
     <div class="arena" id="arena">
       <canvas id="cv"></canvas>
+      <div class="vignette"></div>
 
       <div class="bars">
         <div class="bar"><i id="hpFill"></i></div>
@@ -1401,6 +1410,196 @@
     syncHud();
   }
 
+  /* ==================== 地形地图 ==================== */
+
+  var TILE = 48;
+  var CHUNK_TILES = 8;
+  var CHUNK_PX = TILE * CHUNK_TILES;
+  var chunkCache = new Map();
+
+  var T_COLOR = {
+    deep: "#0f2138", water: "#1b3a5c", river: "#255d8c",
+    sand: "#4a422c", grass: "#2b3720", forest: "#1f2c19",
+    rock: "#35373d", snow: "#454b53"
+  };
+
+  function hash2(x, y) {
+    var h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  function smoothstep(t) { return t * t * (3 - 2 * t); }
+
+  function noise2(x, y) {
+    var xi = Math.floor(x), yi = Math.floor(y);
+    var xf = x - xi, yf = y - yi;
+    var u = smoothstep(xf), v = smoothstep(yf);
+    var a = hash2(xi, yi), b = hash2(xi + 1, yi);
+    var c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+    var ab = a + (b - a) * u;
+    var cd = c + (d - c) * u;
+    return ab + (cd - ab) * v;
+  }
+
+  function fbm(x, y, oct) {
+    var sum = 0, amp = 1, freq = 1, norm = 0;
+    for (var i = 0; i < oct; i++) {
+      sum += noise2(x * freq, y * freq) * amp;
+      norm += amp;
+      amp *= 0.5;
+      freq *= 2;
+    }
+    return sum / norm;
+  }
+
+  // 高度场决定 水/沙/草/林/岩/雪，脊状噪声的窄带切出蜿蜒河流。
+  // 出生点附近额外抬升高度，保证玩家永远开在陆地上且过渡自然。
+  function terrainKind(wx, wy) {
+    var hRaw = fbm(wx * 0.0013, wy * 0.0013, 4);
+    var rg = Math.abs(fbm(wx * 0.0009 + 41.7, wy * 0.0009 + 91.3, 3) - 0.5);
+    var d2 = wx * wx + wy * wy;
+    var h = hRaw + (d2 < 115600 ? (1 - d2 / 115600) * 0.17 : 0);
+    if (rg < 0.013 && hRaw > 0.30 && hRaw < 0.78) return "river";
+    if (h < 0.305) return "deep";
+    if (h < 0.355) return "water";
+    if (h < 0.415) return "sand";
+    if (h < 0.60) return "grass";
+    if (h < 0.71) return "forest";
+    if (h < 0.81) return "rock";
+    return "snow";
+  }
+
+  function drawTree(g, x, y, s) {
+    g.fillStyle = "rgba(0,0,0,0.30)";
+    g.beginPath(); g.ellipse(x, y + s * 0.55, s * 0.85, s * 0.3, 0, 0, 6.2832); g.fill();
+    g.fillStyle = "#1d3816";
+    g.beginPath(); g.arc(x, y, s, 0, 6.2832); g.fill();
+    g.fillStyle = "#2c4d22";
+    g.beginPath(); g.arc(x - s * 0.22, y - s * 0.24, s * 0.62, 0, 6.2832); g.fill();
+  }
+
+  function drawRock(g, x, y, s) {
+    g.fillStyle = "rgba(0,0,0,0.32)";
+    g.beginPath(); g.ellipse(x, y + s * 0.45, s, s * 0.32, 0, 0, 6.2832); g.fill();
+    g.fillStyle = "#42454c";
+    g.beginPath();
+    g.moveTo(x - s, y + s * 0.5);
+    g.lineTo(x - s * 0.55, y - s * 0.45);
+    g.lineTo(x + s * 0.15, y - s * 0.8);
+    g.lineTo(x + s * 0.9, y - s * 0.05);
+    g.lineTo(x + s * 0.65, y + s * 0.5);
+    g.closePath(); g.fill();
+    g.fillStyle = "rgba(255,255,255,0.07)";
+    g.beginPath();
+    g.moveTo(x - s * 0.55, y - s * 0.45);
+    g.lineTo(x + s * 0.15, y - s * 0.8);
+    g.lineTo(x + s * 0.05, y - s * 0.25);
+    g.closePath(); g.fill();
+  }
+
+  function paintTile(g, px, py, tx, ty, kind) {
+    g.fillStyle = T_COLOR[kind];
+    g.fillRect(px, py, TILE + 1, TILE + 1);
+
+    var r = hash2(tx * 31 + 7, ty * 17 + 3);
+
+    if (kind === "forest") {
+      var n = 1 + Math.floor(r * 2);
+      for (var i = 0; i < n; i++) {
+        var ox = hash2(tx * 3 + i, ty * 5 + i * 7) * (TILE - 24) + 12;
+        var oy = hash2(tx * 11 + i * 3, ty * 7 + i) * (TILE - 24) + 12;
+        drawTree(g, px + ox, py + oy, 7 + hash2(tx + i, ty - i) * 5);
+      }
+    } else if (kind === "rock" || kind === "snow") {
+      if (r < 0.5) {
+        var rx = hash2(tx * 5, ty * 9) * (TILE - 22) + 11;
+        var ry = hash2(tx * 13, ty * 3) * (TILE - 22) + 11;
+        drawRock(g, px + rx, py + ry, 5 + r * 5);
+      }
+    } else if (kind === "grass") {
+      if (r < 0.55) {
+        g.strokeStyle = "rgba(126,158,92,0.22)";
+        g.lineWidth = 1;
+        g.beginPath();
+        for (var k = 0; k < 2; k++) {
+          var gx = px + hash2(tx * 7 + k, ty * 2) * (TILE - 10) + 5;
+          var gy = py + hash2(tx * 2, ty * 7 + k) * (TILE - 10) + 6;
+          g.moveTo(gx, gy);
+          g.lineTo(gx - 1.6, gy - 4.5);
+          g.moveTo(gx, gy);
+          g.lineTo(gx + 1.6, gy - 5.5);
+        }
+        g.stroke();
+      }
+    } else if (kind === "sand") {
+      if (r < 0.4) {
+        g.fillStyle = "rgba(190,175,130,0.14)";
+        for (var d = 0; d < 2; d++) {
+          var sx2 = px + hash2(tx * 9 + d, ty * 4) * (TILE - 6) + 3;
+          var sy2 = py + hash2(tx * 4, ty * 9 + d) * (TILE - 6) + 3;
+          g.fillRect(sx2, sy2, 2, 2);
+        }
+      }
+    } else {
+      g.strokeStyle = kind === "deep" ? "rgba(120,175,225,0.10)" : "rgba(150,205,245,0.17)";
+      g.lineWidth = 1;
+      g.beginPath();
+      var wy2 = py + 12 + r * (TILE - 24);
+      var wx2 = px + 8 + hash2(tx * 3, ty * 11) * 12;
+      g.moveTo(wx2, wy2);
+      g.quadraticCurveTo(wx2 + 7, wy2 - 2.5, wx2 + 14, wy2);
+      g.stroke();
+    }
+  }
+
+  function buildChunk(cx, cy) {
+    var c = document.createElement("canvas");
+    c.width = CHUNK_PX;
+    c.height = CHUNK_PX;
+    var g = c.getContext("2d");
+    for (var ty = 0; ty < CHUNK_TILES; ty++) {
+      for (var tx = 0; tx < CHUNK_TILES; tx++) {
+        var gtx = cx * CHUNK_TILES + tx;
+        var gty = cy * CHUNK_TILES + ty;
+        paintTile(g, tx * TILE, ty * TILE, gtx, gty, terrainKind(gtx * TILE, gty * TILE));
+      }
+    }
+    return c;
+  }
+
+  function getChunk(cx, cy) {
+    var key = cx + "|" + cy;
+    var c = chunkCache.get(key);
+    if (c) return c;
+    c = buildChunk(cx, cy);
+    chunkCache.set(key, c);
+    if (chunkCache.size > 64) {
+      var it = chunkCache.keys();
+      for (var i = 0; i < 20; i++) {
+        var n = it.next();
+        if (n.done) break;
+        chunkCache.delete(n.value);
+      }
+    }
+    return c;
+  }
+
+  function drawTerrain() {
+    var halfW = W / 2, halfH = H / 2;
+    var cx0 = Math.floor((camX - halfW) / CHUNK_PX);
+    var cx1 = Math.floor((camX + halfW) / CHUNK_PX);
+    var cy0 = Math.floor((camY - halfH) / CHUNK_PX);
+    var cy1 = Math.floor((camY + halfH) / CHUNK_PX);
+    for (var cy = cy0; cy <= cy1; cy++) {
+      for (var cx = cx0; cx <= cx1; cx++) {
+        var px = Math.round(cx * CHUNK_PX - camX + halfW);
+        var py = Math.round(cy * CHUNK_PX - camY + halfH);
+        ctx.drawImage(getChunk(cx, cy), px, py, CHUNK_PX + 1, CHUNK_PX + 1);
+      }
+    }
+  }
+
   /* ==================== 渲染 ==================== */
 
   function worldToScreen(x, y) {
@@ -1414,20 +1613,8 @@
     ctx.save();
     ctx.translate(sx, sy);
 
-    // 背景
-    ctx.fillStyle = "#0c0e10";
-    ctx.fillRect(-10, -10, W + 20, H + 20);
-
-    // 网格
-    var gs = 64;
-    var ox = (-camX + W / 2) % gs;
-    var oy = (-camY + H / 2) % gs;
-    ctx.strokeStyle = "rgba(255,255,255,0.032)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (var gx = ox - gs; gx < W + gs; gx += gs) { ctx.moveTo(gx, 0); ctx.lineTo(gx, H); }
-    for (var gy = oy - gs; gy < H + gs; gy += gs) { ctx.moveTo(0, gy); ctx.lineTo(W, gy); }
-    ctx.stroke();
+    // 地形地图：程序化生成 + 分块缓存，只绘制视野内的块
+    drawTerrain();
 
     var left = camX - W / 2 - 50, right = camX + W / 2 + 50;
     var top = camY - H / 2 - 50, bottom = camY + H / 2 + 50;
@@ -1756,14 +1943,15 @@
   var last = 0;
 
   function loop(t) {
+    // 先登记下一帧：即使某一帧的渲染抛异常，主循环也不会彻底停死
+    requestAnimationFrame(loop);
+
     var dt = last ? Math.min((t - last) / 1000, 0.05) : 0;
     last = t;
 
     if (state === "playing") update(dt);
-    else if (state === "over") { /* 冻结画面 */ }
 
     render();
-    requestAnimationFrame(loop);
   }
 
   /* ==================== 启动 ==================== */
@@ -1784,6 +1972,7 @@
       auto: autoPlay,
       hero: currentHero ? currentHero.id : null,
       heroWeapon: currentHero ? currentHero.weapon : null,
+      terrainChunks: chunkCache.size,
       time: Math.round(time * 10) / 10,
       enemies: enemies.length,
       bullets: bullets.length,
