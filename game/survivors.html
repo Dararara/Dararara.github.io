@@ -326,6 +326,46 @@
     pointer-events: none;
   }
 
+  .mode-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 2px;
+  }
+
+  .cam-badge {
+    position: absolute;
+    left: 50%;
+    top: 12px;
+    transform: translateX(-50%);
+    padding: 4px 12px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 7px;
+    background: rgba(16, 18, 20, 0.82);
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+  }
+  .cam-badge[hidden] { display: none; }
+
+  .build-hint {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    padding: 5px 14px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 8px;
+    background: rgba(16, 18, 20, 0.85);
+    color: var(--text);
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .build-hint[hidden] { display: none; }
+
   .zoom-ctl {
     position: absolute;
     right: 10px;
@@ -393,6 +433,8 @@
     <div class="hud-cell"><span class="hud-label">击杀</span><span class="hud-value" id="hKills">0</span></div>
     <div class="hud-cell"><span class="hud-label">最佳</span><span class="hud-value" id="hBest" style="font-size:16px">--</span></div>
     <div class="hud-cell"><span class="hud-label">地形</span><span class="hud-value is-accent" id="hTerrain" style="font-size:16px">平原</span></div>
+    <div class="hud-cell" id="cellMat" hidden><span class="hud-label">建材</span><span class="hud-value is-accent" id="hMat">0</span></div>
+    <div class="hud-cell" id="cellFort" hidden><span class="hud-label">要塞</span><span class="hud-value" id="hFort">0/12</span></div>
   </div>
 
   <div class="loadout" id="loadout"></div>
@@ -411,6 +453,8 @@
       <div class="flash" id="flash"></div>
       <div class="auto-badge" id="autoBadge" hidden>自动托管中 · 按 T 接管</div>
       <canvas class="minimap" id="mini" width="180" height="144" title="你在欧洲的位置"></canvas>
+      <div class="cam-badge" id="camBadge" hidden>上帝视角 · WASD 平移 · 按 G 返回跟随</div>
+      <div class="build-hint" id="buildHint" hidden></div>
       <div class="zoom-ctl">
         <button class="zoom-btn" id="zoomOut" title="缩小画面（看得更远）">−</button>
         <span class="zoom-val" id="zoomVal">1.0×</span>
@@ -419,7 +463,11 @@
 
       <div class="picker" id="startScreen">
         <div class="picker-title">选择你的幸存者</div>
-        <div class="picker-sub">每局随机出现三名候选，各有不同的初始武器与特性</div>
+        <div class="mode-row">
+          <button class="btn is-active" data-mode="survival">逃亡 · 撑满十分钟</button>
+          <button class="btn" data-mode="fortress">防线 · 筑城守欧洲</button>
+        </div>
+        <div class="picker-sub" id="modeHint">在怪潮里活到黎明，十分钟一局</div>
         <div class="cards" id="heroCards"></div>
         <div class="start-actions">
           <button class="btn" id="rerollBtn">换一批</button>
@@ -469,7 +517,10 @@
     <strong style="color:var(--accent)">浅水</strong>缓慢回血 ·
     <strong style="color:var(--accent)">深水</strong>持续掉血<br>
     按 <strong style="color:var(--accent)">T</strong> 托管后每个角色打法都不同：修女钻树林打游击、
-    术士抢占高地、刀客在开阔地放风筝、厨子贴脸缠斗、雷使边打边泡浅水回血
+    术士抢占高地、刀客在开阔地放风筝、厨子贴脸缠斗、雷使边打边泡浅水回血<br>
+    <strong style="color:var(--accent)">防线模式</strong>：走到城市废墟按 <strong style="color:var(--accent)">B</strong> 建要塞，
+    击杀掉落建材、靠近再按 B 修缮 · 要塞会开火并压制范围内敌人，耐久归零就失守 ·
+    建成全部 12 座触发最终入侵，撑住即胜 · 按 <strong style="color:var(--accent)">G</strong> 切换上帝视角看全欧洲
   </div>
 </div>
 
@@ -538,6 +589,32 @@
                   desc: "边打边泡浅水，靠回血续航" }
   };
 
+  // 防线模式的据点：按真实经纬度放置的欧洲城市废墟
+  var CITIES = [
+    { name: "君士坦丁堡", lon: 29.00, lat: 41.00 },
+    { name: "雅典",       lon: 23.70, lat: 38.00 },
+    { name: "罗马",       lon: 12.50, lat: 41.90 },
+    { name: "维也纳",     lon: 16.40, lat: 48.20 },
+    { name: "华沙",       lon: 21.00, lat: 52.20 },
+    { name: "基辅",       lon: 30.50, lat: 50.50 },
+    { name: "柏林",       lon: 13.40, lat: 52.50 },
+    { name: "巴黎",       lon: 2.35,  lat: 48.90 },
+    { name: "马德里",     lon: -3.70, lat: 40.40 },
+    { name: "伦敦",       lon: -0.13, lat: 51.50 },
+    { name: "斯德哥尔摩", lon: 18.10, lat: 59.30 },
+    { name: "莫斯科",     lon: 37.60, lat: 55.75 }
+  ];
+
+  var FORT_RANGE = 240;        // 要塞生效半径
+  var FORT_BUILD_COST = 26;    // 建造成本（建材）
+  var FORT_REPAIR_COST = 10;   // 每次修缮的成本
+  var FORT_REPAIR_HP = 180;    // 每次修缮回复的耐久
+  var FORT_MAX_HP = 620;       // 要塞耐久上限
+  var FORT_SHOT_CD = 1.1;      // 炮击间隔
+  var FORT_SHOT_DMG = 26;      // 单发炮击伤害
+  var FORT_WAVE_INTERVAL = 40; // 防线模式：每波之间的间隔（秒）
+  var FORT_FINAL_TIME = 150;   // 最终守护战需要撑住的秒数
+
   var PASSIVES = {
     spinach: { name: "菠菜",     max: 5, color: "#5cc46a", desc: "造成的伤害 +10%" },
     hollow:  { name: "空心之心", max: 5, color: "#e5534b", desc: "最大生命 +22，并立即回复" },
@@ -583,6 +660,13 @@
   var zoomVal = document.getElementById("zoomVal");
   var terrainTag = document.getElementById("terrainTag");
   var elTerrain = document.getElementById("hTerrain");
+  var modeHint = document.getElementById("modeHint");
+  var camBadge = document.getElementById("camBadge");
+  var buildHint = document.getElementById("buildHint");
+  var cellMat = document.getElementById("cellMat");
+  var cellFort = document.getElementById("cellFort");
+  var hMat = document.getElementById("hMat");
+  var hFort = document.getElementById("hFort");
   var levelScreen = document.getElementById("levelScreen");
   var levelTitle = document.getElementById("levelTitle");
   var levelCards = document.getElementById("levelCards");
@@ -615,6 +699,18 @@
   var curTerrain = "grass";    // 玩家当前所在地形
   var terrMul = { speed: 1, area: 1, cd: 1, pickup: 1 };   // 地形带来的临时加成
   var terrMemo = { x: -1e9, y: -1e9 };                     // 地形采样节流
+  var gameMode = "survival";   // survival 逃亡（十分钟）| fortress 防线（筑城长局）
+  var camMode = "follow";      // follow 跟随主角 | god 上帝视角
+  var godX = 0, godY = 0;      // 上帝视角的相机坐标
+  var autoBeforeGod = false;   // 进上帝视角前的托管状态
+  var forts = [];              // 防线模式的据点列表
+  var materials = 0;           // 建材：建造与修缮要塞的消耗
+  var wave = 0;                // 当前波次
+  var waveTimer = 0;           // 下一波倒计时
+  var finalStand = false;      // 是否已进入最终守护战
+  var finalTimer = 0;          // 最终守护战剩余时间
+  var fortified = false;       // 是否已建成全部要塞
+  var autoFortTimer = 0;       // 托管时自动筑城的节流
   var keys = {};
   var stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
 
@@ -707,6 +803,18 @@
     curTerrain = "grass";
     terrMul.speed = 1; terrMul.area = 1; terrMul.cd = 1; terrMul.pickup = 1;
     terrMemo.x = -1e9; terrMemo.y = -1e9;
+    buildForts();
+    materials = 0;
+    wave = 0;
+    waveTimer = FORT_WAVE_INTERVAL;
+    finalStand = false;
+    finalTimer = 0;
+    fortified = false;
+    autoFortTimer = 0;
+    camMode = "follow";
+    godX = 0; godY = 0;
+    updateCamBadge();
+    if (buildHint) buildHint.hidden = true;
     if (terrainTagTimer) { clearTimeout(terrainTagTimer); terrainTagTimer = null; }
     terrainTag.hidden = true;
     S = null;
@@ -776,7 +884,20 @@
       g = gems[i];
       if (dist2(P.x, P.y, g.x, g.y) < scan2) loot.push(g);
     }
-    if (!threat.length && !loot.length) return;   // 四周无事，保持当前方向
+    // 防线模式：先决定当前最该前往的据点（够建材才去建、受损才去修）
+    var fortGoal = null, fortGoalD = Infinity;
+    if (gameMode === "fortress") {
+      for (i = 0; i < forts.length; i++) {
+        var ff = forts[i];
+        var fd = Math.hypot(ff.x - P.x, ff.y - P.y);
+        if (fd > 1500) continue;
+        var want = (!ff.built && materials >= FORT_BUILD_COST) ||
+                   (ff.built && ff.hp < FORT_MAX_HP * 0.6 && materials >= FORT_REPAIR_COST);
+        if (want && fd < fortGoalD) { fortGoalD = fd; fortGoal = ff; }
+      }
+    }
+
+    if (!threat.length && !loot.length && !fortGoal) return;   // 四周无事，保持当前方向
 
     // 最近的敌人用于绕圈偏置
     var nearest = null, nearestD = Infinity;
@@ -832,6 +953,13 @@
       if (tk === "deep") lure -= 4.0;                             // 深水持续掉血，强烈规避
       if (P.hp / P.maxHp < 0.35 && tk === "water") lure += 3.2;   // 残血时的求生本能
 
+      // 防线模式：朝待建 / 待修的据点靠拢，优先于一般游走
+      if (fortGoal) {
+        var fgx = fortGoal.x - P.x, fgy = fortGoal.y - P.y;
+        var fgd = Math.hypot(fgx, fgy) || 1;
+        lure += ((fgx * dx + fgy * dy) / fgd) * 3.2;
+      }
+
       var score = lure - danger * 1.7 + Math.random() * 0.05;
       if (score > bestScore) { bestScore = score; best = dirs[d]; }
     }
@@ -842,6 +970,203 @@
     var len = Math.hypot(aiDir.x, aiDir.y) || 1;
     aiDir.x /= len;
     aiDir.y /= len;
+  }
+
+  /* ==================== 防线模式：要塞 ==================== */
+
+  function buildForts() {
+    forts = [];
+    for (var i = 0; i < CITIES.length; i++) {
+      var c = CITIES[i];
+      forts.push({
+        name: c.name,
+        lon: c.lon,
+        lat: c.lat,
+        x: (c.lon - GEO_LON) * DEG,
+        y: (GEO_LAT - c.lat) * DEG,
+        built: false, hp: 0, cool: 0, flash: 0
+      });
+    }
+  }
+
+  function nearestFort(x, y, maxD) {
+    var best = null, bestD = maxD === undefined ? Infinity : maxD;
+    for (var i = 0; i < forts.length; i++) {
+      var f = forts[i];
+      var d = Math.hypot(f.x - x, f.y - y);
+      if (d < bestD) { bestD = d; best = f; }
+    }
+    return best;
+  }
+
+  function builtFortCount() {
+    var n = 0;
+    for (var i = 0; i < forts.length; i++) if (forts[i].built) n++;
+    return n;
+  }
+
+  // 在废墟旁按 B：未建成则建造，已建成则修缮
+  function tryInteractFort() {
+    if (gameMode !== "fortress" || state !== "playing") return;
+    var f = nearestFort(P.x, P.y, 110);
+    if (!f) return;
+
+    if (!f.built) {
+      if (materials < FORT_BUILD_COST) {
+        showFloat(P.x, P.y - 30, "建材不足（需 " + FORT_BUILD_COST + "）", "#e5534b", 1.5, 13);
+        return;
+      }
+      materials -= FORT_BUILD_COST;
+      f.built = true;
+      f.hp = FORT_MAX_HP;
+      f.flash = 0.7;
+      showFloat(f.x, f.y - 36, f.name + " 要塞落成", "#ffd200", 2.2, 16);
+      addFx({ kind: "ring", x: f.x, y: f.y, r: FORT_RANGE, life: 0.9, max: 0.9, color: "#ffd200" });
+      if (builtFortCount() >= forts.length) onAllFortsBuilt();
+      return;
+    }
+
+    if (f.hp >= FORT_MAX_HP) {
+      showFloat(P.x, P.y - 30, f.name + " 状态完好", "#8b9196", 1.2, 12);
+      return;
+    }
+    if (materials < FORT_REPAIR_COST) {
+      showFloat(P.x, P.y - 30, "建材不足（需 " + FORT_REPAIR_COST + "）", "#e5534b", 1.5, 13);
+      return;
+    }
+    materials -= FORT_REPAIR_COST;
+    f.hp = Math.min(FORT_MAX_HP, f.hp + FORT_REPAIR_HP);
+    f.flash = 0.35;
+    showFloat(f.x, f.y - 34, "修缮 +" + FORT_REPAIR_HP, "#4bbf73", 1.4, 14);
+  }
+
+  function updateForts(dt) {
+    for (var i = 0; i < forts.length; i++) {
+      var f = forts[i];
+      if (f.flash > 0) f.flash -= dt;
+      if (!f.built) continue;
+
+      // 炮击：定期点名范围内的敌人
+      f.cool -= dt;
+      if (f.cool <= 0) {
+        f.cool = FORT_SHOT_CD;
+        var target = null;
+        for (var j = 0; j < enemies.length; j++) {
+          var e = enemies[j];
+          if (e.reaper || e.dead) continue;
+          if (dist2(e.x, e.y, f.x, f.y) < FORT_RANGE * FORT_RANGE) { target = e; break; }
+        }
+        if (target) {
+          addFx({
+            kind: "bolt", x: target.x, y: target.y, life: 0.2, max: 0.2,
+            color: "#ffd200", dmg: FORT_SHOT_DMG, done: false
+          });
+        }
+      }
+
+      // 耐久归零被推平，退回废墟
+      if (f.hp <= 0) {
+        f.built = false;
+        f.hp = 0;
+        addFx({ kind: "ring", x: f.x, y: f.y, r: FORT_RANGE, life: 0.7, max: 0.7, color: "#e5534b" });
+        showFloat(f.x, f.y - 34, f.name + " 失守", "#e5534b", 2.4, 16);
+      }
+    }
+  }
+
+  // 玩家是否站在某座要塞的庇护范围内
+  function fortShelter(x, y) {
+    var f = nearestFort(x, y, FORT_RANGE);
+    return f && f.built ? f : null;
+  }
+
+  function spawnWave(mult) {
+    var n = Math.min(8 + wave * 4, 56);
+    var d = difficulty();
+    for (var i = 0; i < n && enemies.length < MAX_ENEMIES; i++) {
+      var e = spawnAt(pickType(), d.hpMul * (mult || 1.2), false);
+      if (!e) continue;
+      // 入侵从东侧压过来
+      e.x = P.x + 900 + Math.random() * 500;
+      e.y = P.y + rand(-600, 600);
+    }
+  }
+
+  function onAllFortsBuilt() {
+    fortified = true;
+    finalStand = true;
+    finalTimer = FORT_FINAL_TIME;
+    showFloat(P.x, P.y - 52, "防线建成 · 最终入侵", "#ffd200", 3.4, 20);
+  }
+
+  function updateWaves(dt) {
+    if (gameMode !== "fortress") return;
+
+    if (finalStand) {
+      finalTimer -= dt;
+      waveTimer -= dt;
+      if (waveTimer <= 0) {          // 最终入侵期间持续增援
+        waveTimer = 4;
+        spawnWave(1.5);
+      }
+      if (builtFortCount() === 0) { endGame(false); return; }
+      if (finalTimer <= 0) { endGame(true); return; }
+      return;
+    }
+
+    if (fortified) return;
+    waveTimer -= dt;
+    if (waveTimer <= 0) {
+      waveTimer = FORT_WAVE_INTERVAL;
+      wave++;
+      spawnWave(1.15);
+      showFloat(P.x, P.y - 48, "第 " + wave + " 波入侵", "#e5534b", 2.6, 18);
+    }
+  }
+
+  function updateBuildHint() {
+    if (gameMode !== "fortress" || state !== "playing") {
+      if (!buildHint.hidden) buildHint.hidden = true;
+      return;
+    }
+    var f = nearestFort(P.x, P.y, 110);
+    if (!f) { if (!buildHint.hidden) buildHint.hidden = true; return; }
+    buildHint.textContent = f.built
+      ? f.name + " 要塞 · 耐久 " + Math.round(f.hp / FORT_MAX_HP * 100) + "% · 按 B 修缮（建材 " + FORT_REPAIR_COST + "，现有 " + materials + "）"
+      : f.name + " 废墟 · 按 B 建立要塞（建材 " + FORT_BUILD_COST + "，现有 " + materials + "）";
+    buildHint.hidden = false;
+  }
+
+  /* ==================== 相机模式 ==================== */
+
+  function updateCamBadge() {
+    camBadge.hidden = !(camMode === "god" && (state === "playing" || state === "map"));
+  }
+
+  function toggleCamMode() {
+    if (state !== "playing" && state !== "map") return;
+    if (camMode === "follow") {
+      camMode = "god";
+      godX = camX;
+      godY = camY;
+      autoBeforeGod = autoPlay;
+      if (!autoPlay) setAuto(true);   // 看全局时角色交给 AI 接管，否则会站着挨打
+    } else {
+      camMode = "follow";
+      if (!autoBeforeGod) setAuto(false);
+    }
+    updateCamBadge();
+  }
+
+  function updateGodCam(dt) {
+    if (camMode !== "god") return;
+    var sp = 780 / zoom * dt;
+    if (keys.ArrowLeft || keys.a || keys.A) godX -= sp;
+    if (keys.ArrowRight || keys.d || keys.D) godX += sp;
+    if (keys.ArrowUp || keys.w || keys.W) godY -= sp;
+    if (keys.ArrowDown || keys.s || keys.S) godY += sp;
+    camX = godX;
+    camY = godY;
   }
 
   document.addEventListener("keydown", function (e) {
@@ -855,6 +1180,8 @@
       return;
     }
     if (e.key === "m" || e.key === "M") { toggleMap(); return; }
+    if (e.key === "b" || e.key === "B") { tryInteractFort(); return; }
+    if (e.key === "g" || e.key === "G") { toggleCamMode(); return; }
     if (state === "playing" || state === "paused") {
       if (e.key === "p" || e.key === "P" || e.key === "Escape") togglePause();
     }
@@ -915,7 +1242,8 @@
   }
 
   function spawnAt(tpl, hpMul, isElite) {
-    var ang = Math.random() * Math.PI * 2;
+    // 防线模式的入侵从东侧压来，生存模式则四面合围
+    var ang = gameMode === "fortress" ? rand(-0.95, 0.95) : Math.random() * Math.PI * 2;
     var radius = Math.hypot(W / zoom, H / zoom) / 2 + 70;
     var e = {
       type: tpl.id,
@@ -969,7 +1297,7 @@
     }
 
     // 时间到，黎明降临
-    if (!survived && time >= WIN_TIME) {
+    if (gameMode === "survival" && !survived && time >= WIN_TIME) {
       survived = true;
       enemies.length = 0;
       showFloat(P.x, P.y - 40, "黎明降临", "#ffd200", 2.4, 22);
@@ -1038,6 +1366,10 @@
       return;
     }
     gems.push({ kind: "xp", x: e.x, y: e.y, r: 5, value: e.xp, t: 0, vx: 0, vy: 0 });
+    // 防线模式：击杀额外掉落建材，用于筑城与修缮
+    if (gameMode === "fortress" && Math.random() < 0.5 && gems.length < MAX_GEMS) {
+      gems.push({ kind: "mat", x: e.x + rand(-16, 16), y: e.y + rand(-16, 16), r: 6, value: 1, t: 0, vx: 0, vy: 0 });
+    }
     if (Math.random() < 0.028 && gems.length < MAX_GEMS) {
       gems.push({ kind: "chicken", x: e.x + 10, y: e.y + 6, r: 7, t: 0, vx: 0, vy: 0 });
     }
@@ -1233,6 +1565,9 @@
       xp += g.value;
       showFloat(g.x, g.y - 6, "+" + g.value, "#4fd1c5", 0.5, 10);
       checkLevel();
+    } else if (g.kind === "mat") {
+      materials += g.value || 1;
+      showFloat(g.x, g.y - 6, "+" + (g.value || 1), "#c8ccd0", 0.5, 10);
     } else if (g.kind === "chicken") {
       P.hp = Math.min(P.maxHp, P.hp + 26);
       showFloat(P.x, P.y - 22, "+26", "#4bbf73", 0.8, 13);
@@ -1474,6 +1809,19 @@
     // ---- 地形：先刷新玩家所在地形带来的临时加成
     updatePlayerTerrain();
 
+    // ---- 托管时的自动筑城：走到废墟/要塞旁就自动建造与修缮
+    if (autoPlay && gameMode === "fortress") {
+      autoFortTimer -= dt;
+      if (autoFortTimer <= 0) {
+        autoFortTimer = 0.7;
+        var nf = nearestFort(P.x, P.y, 105);
+        if (nf) {
+          if (!nf.built && materials >= FORT_BUILD_COST) tryInteractFort();
+          else if (nf.built && nf.hp < FORT_MAX_HP * 0.8 && materials >= FORT_REPAIR_COST) tryInteractFort();
+        }
+      }
+    }
+
     // ---- 玩家移动：自动托管时由 AI 接管方向
     var mv;
     if (autoPlay) {
@@ -1491,7 +1839,8 @@
     }
     if (P.invul > 0) P.invul -= dt;
     if (P.hitFlash > 0) P.hitFlash -= dt;
-    camX = P.x; camY = P.y;
+    if (camMode === "god") updateGodCam(dt);
+    else { camX = P.x; camY = P.y; }
 
     // ---- 地形对生命的持续影响：浅水回血、深水掉血
     var tTrait = TERRAIN_TRAITS[curTerrain] || {};
@@ -1514,14 +1863,31 @@
       var dx = P.x - e.x, dy = P.y - e.y;
       var d = Math.hypot(dx, dy) || 1;
       var nx = dx / d, ny = dy / d;
+
+      // 防线模式：要塞既能压制来犯者，也会被来犯者拆
+      var fortMul = 1;
+      if (gameMode === "fortress" && !e.reaper) {
+        var tf = nearestFort(e.x, e.y, FORT_RANGE);
+        if (tf && tf.built) {
+          if (dist2(e.x, e.y, tf.x, tf.y) < 9216) {   // 96px 内就停下来拆墙
+            tf.hp -= e.dmg * dt * 0.6;
+            e.wob += dt * 6;
+            if (e.hitCd > 0) e.hitCd -= dt;
+            if (e.flash > 0) e.flash -= dt;
+            continue;
+          }
+          fortMul = 0.5;                              // 庇护范围内被压制
+        }
+      }
+
       // 只对附近的敌人查询地形（200px 内），避免每帧为全场敌人做数千次采样
       var emv = 1;
       if (dx * dx + dy * dy < 40000) {
         var et = TERRAIN_TRAITS[terrainAtFast(e.x, e.y)];
         if (et && et.enemySpeed) emv = et.enemySpeed;
       }
-      e.x += nx * e.speed * emv * dt;
-      e.y += ny * e.speed * emv * dt;
+      e.x += nx * e.speed * emv * fortMul * dt;
+      e.y += ny * e.speed * emv * fortMul * dt;
       e.wob += dt * 6;
       if (e.hitCd > 0) e.hitCd -= dt;
       if (e.flash > 0) e.flash -= dt;
@@ -1584,6 +1950,9 @@
     cleanupEnemies();
     updateGems(dt);
     checkEvolutions();
+    updateForts(dt);
+    updateWaves(dt);
+    updateBuildHint();
 
     // ---- 飘字
     for (var p2 = floats.length - 1; p2 >= 0; p2--) {
@@ -1968,6 +2337,51 @@
     }
   }
 
+  // 防线模式的据点：废墟 / 要塞 / 庇护范围
+  function drawForts() {
+    if (gameMode !== "fortress") return;
+    for (var i = 0; i < forts.length; i++) {
+      var f = forts[i];
+      var p = worldToScreen(f.x, f.y);
+      if (p.x < -120 || p.x > W + 120 || p.y < -120 || p.y > H + 120) continue;
+
+      if (!f.built) {
+        ctx.strokeStyle = "rgba(255,210,0,0.45)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath(); ctx.arc(p.x, p.y, 30 * zoom, 0, 6.2832); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(155,148,120,0.9)";
+        ctx.fillRect(p.x - 10 * zoom, p.y - 7 * zoom, 20 * zoom, 14 * zoom);
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.fillRect(p.x - 10 * zoom, p.y - 1 * zoom, 20 * zoom, 3 * zoom);
+        continue;
+      }
+
+      // 庇护范围
+      ctx.globalAlpha = f.flash > 0 ? 0.22 : 0.09;
+      ctx.fillStyle = "#ffd200";
+      ctx.beginPath(); ctx.arc(p.x, p.y, FORT_RANGE * zoom, 0, 6.2832); ctx.fill();
+      ctx.globalAlpha = 1;
+
+      var s = 26 * zoom;
+      ctx.fillStyle = f.flash > 0 ? "#ffffff" : "#8b8f7a";
+      ctx.fillRect(p.x - s, p.y - s, s * 2, s * 2);
+      ctx.fillStyle = "#5f6355";
+      ctx.fillRect(p.x - s, p.y + s * 0.15, s * 2, s * 0.85);
+      ctx.fillStyle = "#a8ac96";
+      ctx.fillRect(p.x - s * 0.8, p.y - s * 1.3, s * 0.55, s * 0.6);
+      ctx.fillRect(p.x + s * 0.25, p.y - s * 1.3, s * 0.55, s * 0.6);
+
+      var hpw = 58 * zoom;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(p.x - hpw / 2, p.y - s * 1.9, hpw, 5);
+      var ratio = clamp(f.hp / FORT_MAX_HP, 0, 1);
+      ctx.fillStyle = ratio > 0.5 ? "#4bbf73" : (ratio > 0.22 ? "#e0a44a" : "#e5534b");
+      ctx.fillRect(p.x - hpw / 2, p.y - s * 1.9, hpw * ratio, 5);
+    }
+  }
+
   /* ==================== 小地图 / 大地图 / 缩放 ==================== */
 
   function setZoom(z) {
@@ -2025,6 +2439,16 @@
     g.lineWidth = 1;
     g.strokeRect(a.x, a.y, Math.max(3, b.x - a.x), Math.max(3, b.y - a.y));
 
+    // 防线模式：在地图上标出各据点（亮色=已建成，暗色=废墟）
+    if (gameMode === "fortress" && forts.length) {
+      for (var fi = 0; fi < forts.length; fi++) {
+        var ff = forts[fi];
+        var fp = worldToMap(ff.x, ff.y, w, h);
+        g.fillStyle = ff.built ? "#ffd200" : "rgba(255,210,0,0.30)";
+        g.fillRect(fp.x - 2, fp.y - 2, 4, 4);
+      }
+    }
+
     // 玩家位置：脉冲圆环 + 实心点
     var p = worldToMap(camX, camY, w, h);
     var t = (performance.now() % 1200) / 1200;
@@ -2077,6 +2501,9 @@
     // 地形地图：程序化生成 + 分块缓存，只绘制视野内的块
     drawTerrain();
 
+    // 防线模式的据点（废墟 / 要塞）
+    drawForts();
+
     var pad = 50 / zoom;
     var left = camX - W / (2 * zoom) - pad, right = camX + W / (2 * zoom) + pad;
     var top = camY - H / (2 * zoom) - pad, bottom = camY + H / (2 * zoom) + pad;
@@ -2096,6 +2523,11 @@
         ctx.lineTo(p.x, p.y + gr); ctx.lineTo(p.x - gr, p.y);
         ctx.closePath(); ctx.fill();
         ctx.globalAlpha = 1;
+      } else if (g.kind === "mat") {
+        ctx.fillStyle = "#b9bec4";
+        ctx.fillRect(p.x - 5, p.y - 5, 10, 10);
+        ctx.fillStyle = "#6d7278";
+        ctx.fillRect(p.x - 5, p.y + 1, 10, 4);
       } else if (g.kind === "chicken") {
         ctx.fillStyle = "#e0a44a";
         ctx.beginPath(); ctx.arc(p.x, p.y, g.r, 0, 6.283); ctx.fill();
@@ -2267,9 +2699,17 @@
   /* ==================== HUD ==================== */
 
   function syncHud() {
-    elTime.textContent = fmtTime(time);
+    if (gameMode === "fortress" && finalStand) {
+      elTime.textContent = fmtTime(Math.max(0, finalTimer));
+    } else {
+      elTime.textContent = fmtTime(time);
+    }
     elLevel.textContent = level;
     elKills.textContent = kills;
+    if (gameMode === "fortress") {
+      hMat.textContent = materials;
+      hFort.textContent = builtFortCount() + "/" + forts.length;
+    }
     var hpPct = clamp(P.hp / P.maxHp, 0, 1) * 100;
     hpFill.style.width = hpPct + "%";
     hpFill.className = hpPct < 30 ? "low" : "";
@@ -2308,6 +2748,9 @@
     currentHero = selectedHero || heroCandidates[Math.floor(Math.random() * heroCandidates.length)] || HEROES[0];
     selectedHero = currentHero;
     reset();
+    var isFort = gameMode === "fortress";
+    cellMat.hidden = !isFort;
+    cellFort.hidden = !isFort;
     startScreen.hidden = true;
     levelScreen.hidden = true;
     overScreen.hidden = true;
@@ -2431,6 +2874,18 @@
   document.getElementById("rerollBtn").addEventListener("click", rollHeroes);
   autoToggle.addEventListener("click", function () { setAuto(!autoPlay); });
 
+  Array.prototype.forEach.call(document.querySelectorAll(".mode-row .btn"), function (b) {
+    b.addEventListener("click", function () {
+      gameMode = b.getAttribute("data-mode");
+      Array.prototype.forEach.call(document.querySelectorAll(".mode-row .btn"), function (o) {
+        o.classList.toggle("is-active", o === b);
+      });
+      modeHint.textContent = gameMode === "fortress"
+        ? "在废墟上筑城、攒建材修墙，把欧洲连成防线抵御入侵"
+        : "在怪潮里活到黎明，十分钟一局";
+    });
+  });
+
   document.getElementById("zoomIn").addEventListener("click", function () { setZoom(zoom + 0.1); });
   document.getElementById("zoomOut").addEventListener("click", function () { setZoom(zoom - 0.1); });
   mapScreen.addEventListener("click", function (e) { if (e.target === mapScreen) toggleMap(); });
@@ -2457,6 +2912,15 @@
       terrainMul: [terrMul.speed, terrMul.area, terrMul.cd, terrMul.pickup],
       aiStyle: (currentHero && currentHero.ai) || null,
       aiRange: (AI_STYLES[(currentHero && currentHero.ai) || "balanced"] || AI_STYLES.balanced).idealRange,
+      mode: gameMode,
+      camMode: camMode,
+      materials: materials,
+      forts: builtFortCount(),
+      fortsTotal: forts.length,
+      fortHp: forts.filter(function (f) { return f.built; }).map(function (f) { return Math.round(f.hp); }),
+      wave: wave,
+      finalStand: finalStand,
+      finalTimer: Math.round(finalTimer),
       time: Math.round(time * 10) / 10,
       enemies: enemies.length,
       bullets: bullets.length,
@@ -2481,6 +2945,8 @@
   };
 
   window.__AI_STYLES = AI_STYLES;   // 供自动化测试核对各风格参数
+  // 调试探针：直接发放建材，便于自动化测试走完建造/修缮流程
+  window.__GRANT = function (n) { materials += n; syncHud(); return materials; };
 
   best = readBest();
   resize();
