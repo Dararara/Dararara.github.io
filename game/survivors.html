@@ -207,6 +207,79 @@
     color: var(--dim-2);
     text-transform: uppercase;
   }
+
+  .start-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 2px;
+  }
+  .hero-card {
+    flex: 1 1 152px;
+    max-width: 182px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px 13px;
+    background: var(--panel);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .hero-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .hero-name {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .hero-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .hero-tag {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+  }
+  .hero-desc {
+    font-size: 11.5px;
+    color: var(--dim);
+    font-family: var(--sans);
+    line-height: 1.5;
+    flex: 1;
+  }
+  .hero-bonus {
+    font-size: 11px;
+    color: #4fd1c5;
+  }
+  .hero-weapon {
+    font-size: 11px;
+    color: var(--dim-2);
+  }
+  .auto-badge {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    padding: 3px 10px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 7px;
+    background: rgba(16, 18, 20, 0.78);
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+  }
+  .auto-badge[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -238,15 +311,21 @@
       </div>
       <div class="barlabel" id="hpText">100 / 100</div>
       <div class="flash" id="flash"></div>
+      <div class="auto-badge" id="autoBadge" hidden>自动托管中 · 按 T 接管</div>
 
       <div class="picker" id="startScreen">
-        <div class="picker-title">活到黎明</div>
-        <div class="picker-sub">
-          <kbd style="font-family:var(--mono);border:1px solid var(--line-2);border-radius:4px;padding:1px 5px">WASD</kbd>
-          <kbd style="font-family:var(--mono);border:1px solid var(--line-2);border-radius:4px;padding:1px 5px">↑↓←→</kbd>
-          移动，手机上按住屏幕拖动 · 武器全自动开火
+        <div class="picker-title">选择你的幸存者</div>
+        <div class="picker-sub">每局随机出现三名候选，各有不同的初始武器与特性</div>
+        <div class="cards" id="heroCards"></div>
+        <div class="start-actions">
+          <button class="btn" id="rerollBtn">换一批</button>
+          <button class="btn" id="autoToggle">托管：关</button>
+          <button class="btn btn-primary" id="startBtn">随机开一局</button>
         </div>
-        <button class="btn btn-primary" id="startBtn" style="margin-top:6px">开始逃亡</button>
+        <div class="picker-sub" style="font-size:11px;max-width:540px">
+          WASD / ↑↓←→ 移动，手机按住屏幕拖动 · 武器全自动开火 · 游戏中按
+          <strong style="color:var(--accent)">T</strong> 随时切换托管
+        </div>
       </div>
 
       <div class="picker" id="levelScreen" hidden>
@@ -259,7 +338,10 @@
         <div class="picker-title is-danger" id="overTitle">你倒下了</div>
         <div class="result-grid" id="overStats"></div>
         <div class="picker-sub" id="overHint">按回车重来</div>
-        <button class="btn btn-primary" id="againBtn">再来一局</button>
+        <div class="start-actions">
+          <button class="btn btn-primary" id="againBtn">再来一局</button>
+          <button class="btn" id="changeHeroBtn">换个幸存者</button>
+        </div>
       </div>
     </div>
   </div>
@@ -303,6 +385,22 @@
     bolt:   { id: "thunder_loop",   name: "雷霆之环", req: "magnet",  desc: "落雷数量翻倍并造成二次打击" }
   };
 
+  // 幸存者：不同开局有不同初始武器与特性
+  var HEROES = [
+    { id: "whipper", name: "鞭手", weapon: "whip", color: "#f0997b", tag: "攻守均衡",
+      desc: "长鞭横扫身前一整片，容错率最高", bonusText: "无额外加成", bonus: {} },
+    { id: "knifer",  name: "刀客", weapon: "knife", color: "#c8ccd0", tag: "轻盈迅捷",
+      desc: "朝移动方向连投飞刀，边跑边打", bonusText: "移动速度 +12%", bonus: { speed: 0.12 } },
+    { id: "mage",    name: "术士", weapon: "wand", color: "#5aa9f0", tag: "追踪输出",
+      desc: "魔弹自动咬住最近的敌人，几乎不空刀", bonusText: "伤害 +12%", bonus: { dmg: 0.12 } },
+    { id: "cook",    name: "厨子", weapon: "garlic", color: "#9FE1CB", tag: "皮糙肉厚",
+      desc: "身周臭气持续灼烧并推开敌人", bonusText: "最大生命 +34", bonus: { maxHp: 34 } },
+    { id: "nun",     name: "修女", weapon: "bible", color: "#dcc23a", tag: "范围压制",
+      desc: "旋转经卷环绕自身，清场能力极强", bonusText: "攻击范围 +15%", bonus: { area: 0.15 } },
+    { id: "storm",   name: "雷使", weapon: "bolt", color: "#a97fd6", tag: "远程点名",
+      desc: "天雷随机劈落，站的越远越安全", bonusText: "拾取范围 +45%", bonus: { pickup: 0.45 } }
+  ];
+
   var PASSIVES = {
     spinach: { name: "菠菜",     max: 5, color: "#5cc46a", desc: "造成的伤害 +10%" },
     hollow:  { name: "空心之心", max: 5, color: "#e5534b", desc: "最大生命 +22，并立即回复" },
@@ -337,6 +435,9 @@
   var hpText = document.getElementById("hpText");
   var flash = document.getElementById("flash");
   var startScreen = document.getElementById("startScreen");
+  var heroCards = document.getElementById("heroCards");
+  var autoBadge = document.getElementById("autoBadge");
+  var autoToggle = document.getElementById("autoToggle");
   var levelScreen = document.getElementById("levelScreen");
   var levelTitle = document.getElementById("levelTitle");
   var levelCards = document.getElementById("levelCards");
@@ -355,6 +456,14 @@
   var camX, camY, shakeT, damageT;
   var best = 0;
   var S;                       // 被动加成缓存
+  var heroBonus = null;        // 当前幸存者的属性特性
+  var autoPlay = false;        // 自动托管开关
+  var aiDir = { x: 0, y: 0 };  // AI 当前移动方向
+  var aiTimer = 0;             // AI 决策节流
+  var autoPickTimer = null;    // 自动选卡定时器
+  var heroCandidates = [];     // 本局待选的三名幸存者
+  var selectedHero = null;     // 玩家选中的幸存者
+  var currentHero = null;      // 本局实际使用的幸存者
   var keys = {};
   var stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
 
@@ -385,6 +494,13 @@
 
   function recalcStats() {
     var s = { dmg: 1, area: 1, cd: 1, speed: 1, pickup: 1, maxHp: 100 };
+    if (heroBonus) {
+      s.dmg *= 1 + (heroBonus.dmg || 0);
+      s.area *= 1 + (heroBonus.area || 0);
+      s.speed *= 1 + (heroBonus.speed || 0);
+      s.pickup *= 1 + (heroBonus.pickup || 0);
+      s.maxHp += heroBonus.maxHp || 0;
+    }
     for (var i = 0; i < passives.length; i++) {
       var p = passives[i], lv = p.level;
       if (p.id === "spinach") s.dmg *= 1 + 0.10 * lv;
@@ -429,7 +545,8 @@
       fx: 1, fy: 0, speedBase: 168, hitFlash: 0
     };
     enemies = []; bullets = []; gems = []; floats = []; fx = [];
-    weapons = [{ id: "whip", base: "whip", level: 1, timer: 0.35, evolved: false, spin: 0 }];
+    heroBonus = (currentHero && currentHero.bonus) || {};
+    weapons = [{ id: currentHero.weapon, base: currentHero.weapon, level: 1, timer: 0.35, evolved: false, spin: 0 }];
     passives = [];
     time = 0; kills = 0; level = 1; xp = 0;
     xpNext = 6;
@@ -472,8 +589,104 @@
     return { x: x, y: y, len: Math.min(1, len) };
   }
 
+  /* ==================== 自动托管 ==================== */
+
+  var AI_DIR_COUNT = 16;
+  var AI_DIRS = null;
+
+  function aiDirs() {
+    if (AI_DIRS) return AI_DIRS;
+    AI_DIRS = [];
+    for (var i = 0; i < AI_DIR_COUNT; i++) {
+      var a = (Math.PI * 2 / AI_DIR_COUNT) * i;
+      AI_DIRS.push({ x: Math.cos(a), y: Math.sin(a) });
+    }
+    return AI_DIRS;
+  }
+
+  // 采样 16 个方向逐个打分：前方敌人威胁为负，宝石与宝箱的吸引为正，
+  // 再叠加一个「绕圈」偏置，避免正面撞怪同时保证武器有输出角度。
+  function decideAiDir() {
+    var dirs = aiDirs();
+    var scan = 380, scan2 = scan * scan;
+    var threat = [], loot = [], i, e, g;
+
+    for (i = 0; i < enemies.length; i++) {
+      e = enemies[i];
+      if (dist2(P.x, P.y, e.x, e.y) < scan2) threat.push(e);
+    }
+    for (i = 0; i < gems.length; i++) {
+      g = gems[i];
+      if (dist2(P.x, P.y, g.x, g.y) < scan2) loot.push(g);
+    }
+    if (!threat.length && !loot.length) return;   // 四周无事，保持当前方向
+
+    // 最近的敌人用于绕圈偏置
+    var nearest = null, nearestD = Infinity;
+    for (i = 0; i < threat.length; i++) {
+      var dd = Math.sqrt(dist2(P.x, P.y, threat[i].x, threat[i].y));
+      if (dd < nearestD) { nearestD = dd; nearest = threat[i]; }
+    }
+
+    var best = null, bestScore = -Infinity;
+    for (var d = 0; d < dirs.length; d++) {
+      var dx = dirs[d].x, dy = dirs[d].y;
+      var danger = 0, lure = 0;
+
+      for (i = 0; i < threat.length; i++) {
+        e = threat[i];
+        var ex = e.x - P.x, ey = e.y - P.y;
+        var proj = ex * dx + ey * dy;
+        if (proj <= 0) continue;                    // 身后的敌人不构成前进威胁
+        var reach = 150 + e.r;
+        if (proj > reach) continue;
+        var perp = Math.abs(-ex * dy + ey * dx);
+        if (perp > 54 + e.r) continue;              // 不在这条路径上
+        var near = 1 - proj / reach;
+        danger += near * near * (e.elite || e.reaper ? 4 : 1) * (perp < 26 + e.r ? 2.2 : 1);
+      }
+
+      for (i = 0; i < loot.length; i++) {
+        g = loot[i];
+        var gx = g.x - P.x, gy = g.y - P.y;
+        var gd = Math.hypot(gx, gy) || 1;
+        if (gd < 16) continue;
+        var align = (gx * dx + gy * dy) / gd;
+        if (align <= 0.15) continue;
+        var weight = g.kind === "chest" ? 7 : (g.kind === "chicken" ? 4.5 : 1);
+        lure += (1 - gd / scan) * align * weight;
+      }
+
+      // 与最近的敌人维持理想交战距离：太远就主动靠近（否则朝向前方的武器够不着），
+      // 太近就拉开。配合上面的前方威胁项，实际表现是绕着怪群转圈输出。
+      if (nearest && nearestD < 300) {
+        var pull = clamp((nearestD - 52) / 110, -1, 1);
+        var toward = ((nearest.x - P.x) * dx + (nearest.y - P.y) * dy) / nearestD;
+        lure += toward * pull * 2.6;
+      }
+
+      var score = lure - danger * 1.7 + Math.random() * 0.05;
+      if (score > bestScore) { bestScore = score; best = dirs[d]; }
+    }
+
+    if (!best) return;
+    aiDir.x = aiDir.x * 0.45 + best.x * 0.55;       // 平滑转向，避免抖动
+    aiDir.y = aiDir.y * 0.45 + best.y * 0.55;
+    var len = Math.hypot(aiDir.x, aiDir.y) || 1;
+    aiDir.x /= len;
+    aiDir.y /= len;
+  }
+
   document.addEventListener("keydown", function (e) {
-    if (MOVE_KEYS[e.key]) { e.preventDefault(); keys[e.key] = true; }
+    if (MOVE_KEYS[e.key]) {
+      e.preventDefault();
+      keys[e.key] = true;
+      if (autoPlay) setAuto(false);          // 手动按住方向键即接管
+    }
+    if (e.key === "t" || e.key === "T") {
+      if (state === "playing" || state === "paused" || state === "levelup") setAuto(!autoPlay);
+      return;
+    }
     if (state === "playing" || state === "paused") {
       if (e.key === "p" || e.key === "P" || e.key === "Escape") togglePause();
     }
@@ -482,8 +695,8 @@
       var idx = parseInt(e.key, 10) - 1;
       if (cards[idx]) cards[idx].click();
     }
-    if (state === "idle" && (e.key === " " || e.key === "Enter")) { e.preventDefault(); startGame(); }
-    if (state === "over" && e.key === "Enter") startGame();
+    if (state === "idle" && (e.key === " " || e.key === "Enter")) { e.preventDefault(); startGame(null); }
+    if (state === "over" && e.key === "Enter") startGame(currentHero);
   });
 
   document.addEventListener("keyup", function (e) {
@@ -962,9 +1175,42 @@
       levelCards.appendChild(el);
     });
     levelScreen.hidden = false;
+
+    // 托管状态下自动挑一张，留一点延迟让玩家看清选了什么
+    if (autoPlay) {
+      if (autoPickTimer) clearTimeout(autoPickTimer);
+      autoPickTimer = setTimeout(function () {
+        autoPickTimer = null;
+        if (state !== "levelup") return;
+        var best = null, bestScore = -Infinity;
+        choices.forEach(function (c) {
+          var sc = scoreChoice(c) + Math.random() * 6;
+          if (sc > bestScore) { bestScore = sc; best = c; }
+        });
+        if (best) takeChoice(best);
+      }, 460);
+    }
+  }
+
+  // 自动选卡评分：优先进化，其次补齐武器，再优先能导向进化的被动
+  function scoreChoice(c) {
+    if (c.willEvolve) return 900;
+    if (c.kind === "weapon-new") return 62 + (6 - weapons.length) * 5;
+    if (c.kind === "weapon-up") return 48;
+    if (c.kind === "passive") {
+      for (var i = 0; i < weapons.length; i++) {
+        var w = weapons[i];
+        if (w.evolved) continue;
+        var evo = EVOLUTIONS[w.base];
+        if (evo.req === c.id && w.level >= WEAPONS[w.base].max - 2) return 88;
+      }
+      return 40;
+    }
+    return 12;
   }
 
   function takeChoice(c) {
+    if (autoPickTimer) { clearTimeout(autoPickTimer); autoPickTimer = null; }
     if (c.kind === "weapon-up") {
       c.ref.level++;
       if (c.willEvolve) evolveWeapon(c.ref);
@@ -1041,8 +1287,15 @@
   function update(dt) {
     time += dt;
 
-    // ---- 玩家移动
-    var mv = inputVector();
+    // ---- 玩家移动：自动托管时由 AI 接管方向
+    var mv;
+    if (autoPlay) {
+      aiTimer -= dt;
+      if (aiTimer <= 0) { aiTimer = 0.12; decideAiDir(); }
+      mv = { x: aiDir.x, y: aiDir.y, len: 1 };
+    } else {
+      mv = inputVector();
+    }
     if (mv.len > 0.02) {
       P.fx = mv.x; P.fy = mv.y;
       var sp = P.speedBase * S.speed;
@@ -1401,13 +1654,72 @@
 
   /* ==================== 流程 ==================== */
 
-  function startGame() {
+  function startGame(hero) {
+    if (hero) selectedHero = hero;
+    currentHero = selectedHero || heroCandidates[Math.floor(Math.random() * heroCandidates.length)] || HEROES[0];
+    selectedHero = currentHero;
     reset();
     startScreen.hidden = true;
     levelScreen.hidden = true;
     overScreen.hidden = true;
     flash.style.opacity = "0";
+    autoPickTimer = null;
+    aiDir.x = 0; aiDir.y = 0; aiTimer = 0;
     state = "playing";
+  }
+
+  // 每局从 6 名幸存者里随机抽 3 名作为候选
+  function rollHeroes() {
+    var pool = HEROES.slice();
+    heroCandidates = [];
+    while (heroCandidates.length < 3 && pool.length) {
+      heroCandidates.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    selectedHero = null;
+    renderHeroCards();
+  }
+
+  function renderHeroCards() {
+    heroCards.innerHTML = "";
+    heroCandidates.forEach(function (h) {
+      var el = document.createElement("div");
+      el.className = "hero-card";
+      el.innerHTML =
+        '<div class="hero-name"><i class="hero-dot" style="background:' + h.color + '"></i><span></span></div>' +
+        '<div class="hero-tag"></div>' +
+        '<div class="hero-desc"></div>' +
+        '<div class="hero-bonus"></div>' +
+        '<div class="hero-weapon"></div>';
+      el.querySelector(".hero-name span").textContent = h.name;
+      el.querySelector(".hero-tag").textContent = h.tag;
+      el.querySelector(".hero-desc").textContent = h.desc;
+      el.querySelector(".hero-bonus").textContent = h.bonusText;
+      el.querySelector(".hero-weapon").textContent = "初始武器：" + WEAPONS[h.weapon].name;
+      el.addEventListener("click", function () { startGame(h); });
+      heroCards.appendChild(el);
+    });
+  }
+
+  function setAuto(on) {
+    autoPlay = !!on;
+    autoBadge.hidden = !autoPlay;
+    autoToggle.textContent = "托管：" + (autoPlay ? "开" : "关");
+    if (autoPlay) autoToggle.classList.add("is-active");
+    else autoToggle.classList.remove("is-active");
+    if (!autoPlay) {
+      aiDir.x = 0; aiDir.y = 0;
+      keys = {};
+      if (autoPickTimer) { clearTimeout(autoPickTimer); autoPickTimer = null; }
+    }
+  }
+
+  function backToHeroSelect() {
+    setAuto(false);
+    overScreen.hidden = true;
+    levelScreen.hidden = true;
+    startScreen.hidden = false;
+    rollHeroes();
+    state = "idle";
   }
 
   function togglePause() {
@@ -1430,6 +1742,7 @@
     overTitle.textContent = won ? "你活到了黎明" : "你倒下了";
     overTitle.className = "picker-title" + (won ? "" : " is-danger");
     overStats.innerHTML =
+      '<div class="result-cell"><b>' + (currentHero ? currentHero.name : "--") + "</b><span>幸存者</span></div>" +
       '<div class="result-cell"><b>' + fmtTime(secs) + "</b><span>存活</span></div>" +
       '<div class="result-cell"><b>' + level + "</b><span>等级</span></div>" +
       '<div class="result-cell"><b>' + kills + "</b><span>击杀</span></div>" +
@@ -1455,8 +1768,11 @@
 
   /* ==================== 启动 ==================== */
 
-  document.getElementById("startBtn").addEventListener("click", startGame);
-  document.getElementById("againBtn").addEventListener("click", startGame);
+  document.getElementById("startBtn").addEventListener("click", function () { startGame(null); });
+  document.getElementById("againBtn").addEventListener("click", function () { startGame(currentHero); });
+  document.getElementById("changeHeroBtn").addEventListener("click", backToHeroSelect);
+  document.getElementById("rerollBtn").addEventListener("click", rollHeroes);
+  autoToggle.addEventListener("click", function () { setAuto(!autoPlay); });
 
   window.addEventListener("resize", resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(arena);
@@ -1465,6 +1781,9 @@
   window.__DBG = function () {
     return {
       state: state,
+      auto: autoPlay,
+      hero: currentHero ? currentHero.id : null,
+      heroWeapon: currentHero ? currentHero.weapon : null,
       time: Math.round(time * 10) / 10,
       enemies: enemies.length,
       bullets: bullets.length,
@@ -1480,6 +1799,8 @@
 
   best = readBest();
   resize();
+  rollHeroes();
+  currentHero = heroCandidates[0];
   reset();
   updateBest();
   state = "idle";
