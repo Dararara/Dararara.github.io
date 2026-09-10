@@ -274,6 +274,12 @@
     font-size: 11px;
     color: var(--dim-2);
   }
+  .hero-ai {
+    font-size: 11px;
+    color: #a97fd6;
+    font-family: var(--sans);
+    line-height: 1.4;
+  }
   .auto-badge {
     position: absolute;
     left: 10px;
@@ -461,7 +467,9 @@
     <strong style="color:var(--accent)">沙滩</strong>拾取 +40% ·
     <strong style="color:var(--accent)">雪原</strong>冷却 -12% ·
     <strong style="color:var(--accent)">浅水</strong>缓慢回血 ·
-    <strong style="color:var(--accent)">深水</strong>持续掉血
+    <strong style="color:var(--accent)">深水</strong>持续掉血<br>
+    按 <strong style="color:var(--accent)">T</strong> 托管后每个角色打法都不同：修女钻树林打游击、
+    术士抢占高地、刀客在开阔地放风筝、厨子贴脸缠斗、雷使边打边泡浅水回血
   </div>
 </div>
 
@@ -498,21 +506,37 @@
     bolt:   { id: "thunder_loop",   name: "雷霆之环", req: "magnet",  desc: "落雷数量翻倍并造成二次打击" }
   };
 
-  // 幸存者：不同开局有不同初始武器与特性
+  // 幸存者：不同开局有不同初始武器、属性特性，以及各自的 AI 打法
   var HEROES = [
-    { id: "whipper", name: "鞭手", weapon: "whip", color: "#f0997b", tag: "攻守均衡",
+    { id: "whipper", name: "鞭手", weapon: "whip", color: "#f0997b", tag: "攻守均衡", ai: "balanced",
       desc: "长鞭横扫身前一整片，容错率最高", bonusText: "无额外加成", bonus: {} },
-    { id: "knifer",  name: "刀客", weapon: "knife", color: "#c8ccd0", tag: "轻盈迅捷",
+    { id: "knifer",  name: "刀客", weapon: "knife", color: "#c8ccd0", tag: "轻盈迅捷", ai: "skirmisher",
       desc: "朝移动方向连投飞刀，边跑边打", bonusText: "移动速度 +12%", bonus: { speed: 0.12 } },
-    { id: "mage",    name: "术士", weapon: "wand", color: "#5aa9f0", tag: "追踪输出",
+    { id: "mage",    name: "术士", weapon: "wand", color: "#5aa9f0", tag: "追踪输出", ai: "sniper",
       desc: "魔弹自动咬住最近的敌人，几乎不空刀", bonusText: "伤害 +12%", bonus: { dmg: 0.12 } },
-    { id: "cook",    name: "厨子", weapon: "garlic", color: "#9FE1CB", tag: "皮糙肉厚",
+    { id: "cook",    name: "厨子", weapon: "garlic", color: "#9FE1CB", tag: "皮糙肉厚", ai: "brawler",
       desc: "身周臭气持续灼烧并推开敌人", bonusText: "最大生命 +34", bonus: { maxHp: 34 } },
-    { id: "nun",     name: "修女", weapon: "bible", color: "#dcc23a", tag: "范围压制",
+    { id: "nun",     name: "修女", weapon: "bible", color: "#dcc23a", tag: "范围压制", ai: "guerrilla",
       desc: "旋转经卷环绕自身，清场能力极强", bonusText: "攻击范围 +15%", bonus: { area: 0.15 } },
-    { id: "storm",   name: "雷使", weapon: "bolt", color: "#a97fd6", tag: "远程点名",
+    { id: "storm",   name: "雷使", weapon: "bolt", color: "#a97fd6", tag: "远程点名", ai: "drifter",
       desc: "天雷随机劈落，站的越远越安全", bonusText: "拾取范围 +45%", bonus: { pickup: 0.45 } }
   ];
+
+  // AI 打法风格：决定托管时的交战距离，以及会主动往哪种地形靠
+  var AI_STYLES = {
+    balanced:   { name: "均衡",   idealRange: 54,  terrain: {},
+                  desc: "没有明显偏好，见招拆招" },
+    skirmisher: { name: "放风筝", idealRange: 134, terrain: { sand: 1.6, grass: 0.8 },
+                  desc: "始终拉开距离，靠开阔地拉扯" },
+    sniper:     { name: "山地狙击", idealRange: 104, terrain: { rock: 2.8 },
+                  desc: "抢占高地，用射程压制" },
+    brawler:    { name: "贴脸缠斗", idealRange: 26,  terrain: { forest: 1.5 },
+                  desc: "主动撞进怪群，贴身换血" },
+    guerrilla:  { name: "丛林游击", idealRange: 48,  terrain: { forest: 3.4 },
+                  desc: "钻进树林，让树木拖住追兵" },
+    drifter:    { name: "水域续航", idealRange: 92,  terrain: { water: 3.6 },
+                  desc: "边打边泡浅水，靠回血续航" }
+  };
 
   var PASSIVES = {
     spinach: { name: "菠菜",     max: 5, color: "#5cc46a", desc: "造成的伤害 +10%" },
@@ -739,6 +763,7 @@
   // 采样 16 个方向逐个打分：前方敌人威胁为负，宝石与宝箱的吸引为正，
   // 再叠加一个「绕圈」偏置，避免正面撞怪同时保证武器有输出角度。
   function decideAiDir() {
+    var style = AI_STYLES[(currentHero && currentHero.ai) || "balanced"] || AI_STYLES.balanced;
     var dirs = aiDirs();
     var scan = 380, scan2 = scan * scan;
     var threat = [], loot = [], i, e, g;
@@ -790,12 +815,22 @@
       }
 
       // 与最近的敌人维持理想交战距离：太远就主动靠近（否则朝向前方的武器够不着），
-      // 太近就拉开。配合上面的前方威胁项，实际表现是绕着怪群转圈输出。
-      if (nearest && nearestD < 300) {
-        var pull = clamp((nearestD - 52) / 110, -1, 1);
-        var toward = ((nearest.x - P.x) * dx + (nearest.y - P.y) * dy) / nearestD;
-        lure += toward * pull * 2.6;
+      // 太近就拉开。交战距离由打法决定——贴脸缠斗只要 26px，放风筝要 134px。
+      if (nearest && nearestD < 320) {
+        var ux = (nearest.x - P.x) / nearestD, uy = (nearest.y - P.y) / nearestD;
+        var pull = clamp((nearestD - style.idealRange) / 110, -1, 1);
+        lure += (ux * dx + uy * dy) * pull * 2.6;
+        // 需要撤离时额外奖励「侧向」方向：正后方撤离会让武器背对敌人全部打空，
+        // 走切线才能一边拉开距离一边继续输出。
+        if (pull < 0) lure += Math.abs(-ux * dy + uy * dx) * 1.9;
       }
+
+      // 地形偏好：主动朝自己擅长的战术地形靠拢
+      var probe = 130;
+      var tk = terrainAtFast(P.x + dx * probe, P.y + dy * probe);
+      if (style.terrain[tk]) lure += style.terrain[tk];
+      if (tk === "deep") lure -= 4.0;                             // 深水持续掉血，强烈规避
+      if (P.hp / P.maxHp < 0.35 && tk === "water") lure += 3.2;   // 残血时的求生本能
 
       var score = lure - danger * 1.7 + Math.random() * 0.05;
       if (score > bestScore) { bestScore = score; best = dirs[d]; }
@@ -1030,6 +1065,21 @@
     return found;
   }
 
+  // 开火朝向。手动游玩时用移动方向（和原作一致）；
+  // 托管时自动瞄准最近的敌人——人类玩家会主动转身面向敌人，AI 也该如此，
+  // 否则绕圈走位时朝前的武器会全部打在空处。
+  function aimDir() {
+    if (autoPlay) {
+      var t = nearestEnemy(P.x, P.y);
+      if (t) {
+        var dx = t.x - P.x, dy = t.y - P.y;
+        var d = Math.hypot(dx, dy) || 1;
+        return { x: dx / d, y: dy / d };
+      }
+    }
+    return { x: P.fx || 1, y: P.fy || 0 };
+  }
+
   function fireWeapon(w, dt) {
     w.timer -= dt;
     if (w.timer > 0) return;
@@ -1048,8 +1098,8 @@
   }
 
   function fireWhip(w, dmg, area, lv) {
-    var fx0 = P.fx, fy0 = P.fy;
-    if (fx0 === 0 && fy0 === 0) fx0 = 1;
+    var ad = aimDir();
+    var fx0 = ad.x, fy0 = ad.y;
     var reach = (52 + lv * 3) * area;
     var half = (86 + lv * 5) * area;
     var hits = 0;
@@ -1075,8 +1125,8 @@
   }
 
   function fireKnife(w, dmg, area, lv) {
-    var fx0 = P.fx, fy0 = P.fy;
-    if (fx0 === 0 && fy0 === 0) fx0 = 1;
+    var ad = aimDir();
+    var fx0 = ad.x, fy0 = ad.y;
     var count = w.evolved ? 4 + Math.floor(lv / 2) : 1 + Math.floor(lv / 3);
     var spread = 0.15;
     var speed = 460;
@@ -2288,12 +2338,15 @@
         '<div class="hero-tag"></div>' +
         '<div class="hero-desc"></div>' +
         '<div class="hero-bonus"></div>' +
-        '<div class="hero-weapon"></div>';
+        '<div class="hero-weapon"></div>' +
+        '<div class="hero-ai"></div>';
+      var st = AI_STYLES[h.ai] || AI_STYLES.balanced;
       el.querySelector(".hero-name span").textContent = h.name;
       el.querySelector(".hero-tag").textContent = h.tag;
       el.querySelector(".hero-desc").textContent = h.desc;
       el.querySelector(".hero-bonus").textContent = h.bonusText;
       el.querySelector(".hero-weapon").textContent = "初始武器：" + WEAPONS[h.weapon].name;
+      el.querySelector(".hero-ai").textContent = "托管打法：" + st.name + " · " + st.desc;
       el.addEventListener("click", function () { startGame(h); });
       heroCards.appendChild(el);
     });
@@ -2302,6 +2355,8 @@
   function setAuto(on) {
     autoPlay = !!on;
     autoBadge.hidden = !autoPlay;
+    var st = AI_STYLES[(currentHero && currentHero.ai) || "balanced"] || AI_STYLES.balanced;
+    autoBadge.textContent = "自动托管中 · " + st.name + " · 按 T 接管";
     autoToggle.textContent = "托管：" + (autoPlay ? "开" : "关");
     if (autoPlay) autoToggle.classList.add("is-active");
     else autoToggle.classList.remove("is-active");
@@ -2400,6 +2455,8 @@
       mapOpen: state === "map",
       terrain: curTerrain,
       terrainMul: [terrMul.speed, terrMul.area, terrMul.cd, terrMul.pickup],
+      aiStyle: (currentHero && currentHero.ai) || null,
+      aiRange: (AI_STYLES[(currentHero && currentHero.ai) || "balanced"] || AI_STYLES.balanced).idealRange,
       time: Math.round(time * 10) / 10,
       enemies: enemies.length,
       bullets: bullets.length,
@@ -2422,6 +2479,8 @@
     camX = P.x;
     camY = P.y;
   };
+
+  window.__AI_STYLES = AI_STYLES;   // 供自动化测试核对各风格参数
 
   best = readBest();
   resize();
