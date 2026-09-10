@@ -453,7 +453,7 @@
       <div class="flash" id="flash"></div>
       <div class="auto-badge" id="autoBadge" hidden>自动托管中 · 按 T 接管</div>
       <canvas class="minimap" id="mini" width="180" height="144" title="你在欧洲的位置"></canvas>
-      <div class="cam-badge" id="camBadge" hidden>上帝视角 · WASD 平移 · 按 G 返回跟随</div>
+      <div class="cam-badge" id="camBadge" hidden>上帝视角 · 自动托管中 · WASD 平移 · M 大地图 · 按 G 返回</div>
       <div class="build-hint" id="buildHint" hidden></div>
       <div class="zoom-ctl">
         <button class="zoom-btn" id="zoomOut" title="缩小画面（看得更远）">−</button>
@@ -521,6 +521,9 @@
     <strong style="color:var(--accent)">防线模式</strong>：走到城市废墟按 <strong style="color:var(--accent)">B</strong> 建要塞，
     击杀掉落建材、靠近再按 B 修缮 · 要塞会开火并压制范围内敌人，耐久归零就失守 ·
     建成全部 12 座触发最终入侵，撑住即胜 · 按 <strong style="color:var(--accent)">G</strong> 切换上帝视角看全欧洲
+    （上帝视角下自动托管，升级不再弹窗打断）<br>
+    各城市名会标在<b style="color:#ffd200">世界地图</b>与<b style="color:#ffd200">按 M 打开的大地图</b>上，
+    小地图底部提示离你最近的一座
   </div>
 </div>
 
@@ -1097,6 +1100,8 @@
     finalStand = true;
     finalTimer = FORT_FINAL_TIME;
     showFloat(P.x, P.y - 52, "防线建成 · 最终入侵", "#ffd200", 3.4, 20);
+    // 上帝视角下浮动文字不在镜头里，改用顶部信息条播报
+    if (camMode === "god") notify("防线建成 · 最终入侵开始，守住所有要塞！", "#ffd200");
   }
 
   function updateWaves(dt) {
@@ -1150,10 +1155,13 @@
       godX = camX;
       godY = camY;
       autoBeforeGod = autoPlay;
-      if (!autoPlay) setAuto(true);   // 看全局时角色交给 AI 接管，否则会站着挨打
+      setAuto(true);   // 看全局时角色必须交给 AI，否则会站着挨打
+      notify("上帝视角 · 自动托管已开启（WASD 平移 · 滚轮缩放 · M 大地图 · G 返回）");
     } else {
       camMode = "follow";
       if (!autoBeforeGod) setAuto(false);
+      setAuto(autoPlay);   // 刷新标识文案与按钮状态
+      notify("跟随视角" + (autoPlay ? " · 自动托管中" : ""));
     }
     updateCamBadge();
   }
@@ -1173,9 +1181,11 @@
     if (MOVE_KEYS[e.key]) {
       e.preventDefault();
       keys[e.key] = true;
-      if (autoPlay) setAuto(false);          // 手动按住方向键即接管
+      // 手动按住方向键即接管；上帝视角下方向键用于平移相机，不解除托管
+      if (autoPlay && camMode !== "god") setAuto(false);
     }
     if (e.key === "t" || e.key === "T") {
+      if (camMode === "god") { notify("上帝视角下自动托管已锁定 · 按 G 返回跟随视角"); return; }
       if (state === "playing" || state === "paused" || state === "levelup") setAuto(!autoPlay);
       return;
     }
@@ -1675,6 +1685,22 @@
   }
 
   function openLevelUp() {
+    // 上帝视角下不弹面板：后台静默选卡，游戏节奏完全不中断
+    if (camMode === "god") {
+      var autoChoices = buildChoices();
+      if (!autoChoices.length) return;
+      var pickBest = null, pickScore = -Infinity;
+      autoChoices.forEach(function (c) {
+        var sc = scoreChoice(c) + Math.random() * 6;
+        if (sc > pickScore) { pickScore = sc; pickBest = c; }
+      });
+      if (pickBest) {
+        takeChoice(pickBest);
+        notify("等级 " + level + " · 已自动强化「" + pickBest.name + "」");
+      }
+      return;
+    }
+
     state = "levelup";
     levelTitle.textContent = "等级 " + level + " · 选择强化" + (pendingLevels > 1 ? "（还有 " + (pendingLevels - 1) + " 次）" : "");
     var choices = buildChoices();
@@ -2304,20 +2330,28 @@
   }
 
   var terrainTagTimer = null;
-  function showTerrainTag(kind) {
-    var t = TERRAIN_TRAITS[kind];
-    if (!t || !t.desc) {
-      if (terrainTagTimer) { clearTimeout(terrainTagTimer); terrainTagTimer = null; }
-      terrainTag.hidden = true;
-      return;
-    }
-    terrainTag.textContent = t.name + " · " + t.desc;
+  // 顶部信息条：地形提示与系统消息共用。上帝视角下用它替代弹窗，避免打断操作
+  function notify(text, color) {
+    terrainTag.textContent = text;
+    terrainTag.style.color = color || "";
     terrainTag.hidden = false;
     if (terrainTagTimer) clearTimeout(terrainTagTimer);
     terrainTagTimer = setTimeout(function () {
       terrainTag.hidden = true;
       terrainTagTimer = null;
+      terrainTag.style.color = "";
     }, 2800);
+  }
+
+  function showTerrainTag(kind) {
+    var t = TERRAIN_TRAITS[kind];
+    if (!t || !t.desc) {
+      if (terrainTagTimer) { clearTimeout(terrainTagTimer); terrainTagTimer = null; }
+      terrainTag.hidden = true;
+      terrainTag.style.color = "";
+      return;
+    }
+    notify(t.name + " · " + t.desc);
   }
 
   function drawTerrain() {
@@ -2382,6 +2416,32 @@
     }
   }
 
+  // 城市名：跟随视角标注身边这座，上帝视角标出全部据点与耐久，便于规划防线
+  var LABEL_FONT = "system-ui, -apple-system, \"PingFang SC\", \"Microsoft YaHei\", sans-serif";
+  function drawFortLabels() {
+    if (gameMode !== "fortress" || !forts.length) return;
+    var god = camMode === "god";
+    var fs = god ? 14 : 12;
+    ctx.font = (god ? "600 " : "500 ") + fs + "px " + LABEL_FONT;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    for (var i = 0; i < forts.length; i++) {
+      var f = forts[i];
+      var p = worldToScreen(f.x, f.y);
+      if (p.x < -80 || p.x > W + 80 || p.y < -60 || p.y > H + 60) continue;
+      var ratio = clamp(f.hp / FORT_MAX_HP, 0, 1);
+      var label = f.name;
+      if (god && f.built) label += " " + Math.round(ratio * 100) + "%";
+      var y = p.y - (f.built ? 30 : 20) * zoom - 8;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.72)";
+      ctx.strokeText(label, p.x, y);
+      if (!f.built) ctx.fillStyle = "rgba(222,210,168,0.85)";
+      else ctx.fillStyle = ratio < 0.35 ? "#ff9b8a" : "#ffe680";
+      ctx.fillText(label, p.x, y);
+    }
+  }
+
   /* ==================== 小地图 / 大地图 / 缩放 ==================== */
 
   function setZoom(z) {
@@ -2427,7 +2487,7 @@
     };
   }
 
-  function drawMapOverlay(g, base, w, h) {
+  function drawMapOverlay(g, base, w, h, big) {
     g.clearRect(0, 0, w, h);
     g.drawImage(base, 0, 0, w, h);
 
@@ -2441,11 +2501,31 @@
 
     // 防线模式：在地图上标出各据点（亮色=已建成，暗色=废墟）
     if (gameMode === "fortress" && forts.length) {
+      g.textAlign = "left";
+      g.textBaseline = "middle";
+      if (big) g.font = "600 12px " + LABEL_FONT;
       for (var fi = 0; fi < forts.length; fi++) {
         var ff = forts[fi];
         var fp = worldToMap(ff.x, ff.y, w, h);
+        var fr = clamp(ff.hp / FORT_MAX_HP, 0, 1);
         g.fillStyle = ff.built ? "#ffd200" : "rgba(255,210,0,0.30)";
         g.fillRect(fp.x - 2, fp.y - 2, 4, 4);
+
+        if (!big) continue;   // 小地图太窄，城市名会挤成一团，只在下方提示最近的一座
+
+        g.lineWidth = 3;
+        g.strokeStyle = "rgba(0,0,0,0.75)";
+        g.strokeText(ff.name, fp.x + 6, fp.y);
+        g.fillStyle = !ff.built ? "rgba(232,218,172,0.68)"
+                     : (fr < 0.35 ? "#ff9b8a" : "#ffe680");
+        g.fillText(ff.name, fp.x + 6, fp.y);
+
+        if (ff.built) {
+          g.fillStyle = "rgba(0,0,0,0.6)";
+          g.fillRect(fp.x + 6, fp.y + 6, 36, 4);
+          g.fillStyle = fr > 0.5 ? "#4bbf73" : (fr > 0.22 ? "#e0a44a" : "#e5534b");
+          g.fillRect(fp.x + 6, fp.y + 6, 36 * fr, 4);
+        }
       }
     }
 
@@ -2461,16 +2541,32 @@
     g.beginPath();
     g.arc(p.x, p.y, 3, 0, 6.2832);
     g.fill();
+
+    // 小地图宽度有限，标全 12 座城会挤成一团，只在底部提示离你最近的那座
+    if (!big && gameMode === "fortress" && forts.length) {
+      var nf = nearestFort(camX, camY);
+      if (nf) {
+        var txt = "最近 " + nf.name + (nf.built ? " · 已建成" : " · 废墟");
+        g.font = "500 10px " + LABEL_FONT;
+        g.textAlign = "left";
+        g.textBaseline = "bottom";
+        var tw = g.measureText(txt).width;
+        g.fillStyle = "rgba(8,10,12,0.70)";
+        g.fillRect(3, h - 16, tw + 10, 14);
+        g.fillStyle = nf.built ? "#ffe680" : "rgba(232,218,172,0.92)";
+        g.fillText(txt, 8, h - 4);
+      }
+    }
   }
 
   function drawMinimap() {
     if (!miniBase) return;
-    drawMapOverlay(miniCtx, miniBase, 150, 120);
+    drawMapOverlay(miniCtx, miniBase, 150, 120, false);
   }
 
   function drawBigMap() {
     if (!bigBase) return;
-    drawMapOverlay(bigCtx, bigBase, 540, 432);
+    drawMapOverlay(bigCtx, bigBase, 540, 432, true);
   }
 
   function toggleMap() {
@@ -2503,6 +2599,7 @@
 
     // 防线模式的据点（废墟 / 要塞）
     drawForts();
+    drawFortLabels();
 
     var pad = 50 / zoom;
     var left = camX - W / (2 * zoom) - pad, right = camX + W / (2 * zoom) + pad;
@@ -2796,11 +2893,14 @@
   }
 
   function setAuto(on) {
+    if (camMode === "god" && !on) on = true;   // 上帝视角强制托管：否则看战局时角色会站着挨打
     autoPlay = !!on;
     autoBadge.hidden = !autoPlay;
     var st = AI_STYLES[(currentHero && currentHero.ai) || "balanced"] || AI_STYLES.balanced;
-    autoBadge.textContent = "自动托管中 · " + st.name + " · 按 T 接管";
-    autoToggle.textContent = "托管：" + (autoPlay ? "开" : "关");
+    autoBadge.textContent = camMode === "god"
+      ? "自动托管中 · " + st.name + " · 上帝视角已锁定"
+      : "自动托管中 · " + st.name + " · 按 T 接管";
+    autoToggle.textContent = camMode === "god" ? "托管：开（上帝）" : "托管：" + (autoPlay ? "开" : "关");
     if (autoPlay) autoToggle.classList.add("is-active");
     else autoToggle.classList.remove("is-active");
     if (!autoPlay) {
@@ -2898,7 +2998,8 @@
   if (window.ResizeObserver) new ResizeObserver(resize).observe(arena);
 
   // 调试探针：仅用于自动化测试读数，不影响正常游玩
-  window.__DBG = function () {    return {
+  window.__DBG = function () {
+    return {
       state: state,
       auto: autoPlay,
       hero: currentHero ? currentHero.id : null,
@@ -2914,6 +3015,7 @@
       aiRange: (AI_STYLES[(currentHero && currentHero.ai) || "balanced"] || AI_STYLES.balanced).idealRange,
       mode: gameMode,
       camMode: camMode,
+      godPos: [Math.round(godX), Math.round(godY)],
       materials: materials,
       forts: builtFortCount(),
       fortsTotal: forts.length,
@@ -2927,6 +3029,7 @@
       gems: gems.length,
       kills: kills,
       level: level,
+      pending: pendingLevels,
       xp: xp,
       hp: Math.round(P.hp),
       canvas: W + "x" + H,
@@ -2942,6 +3045,14 @@
     terrMemo.y = -1e9;
     camX = P.x;
     camY = P.y;
+  };
+
+  // 调试探针：直接发放经验，便于自动化测试触发升级流程
+  window.__XP = function (n) {
+    xp += n;
+    checkLevel();
+    syncHud();
+    return { xp: xp, level: level, pending: pendingLevels };
   };
 
   window.__AI_STYLES = AI_STYLES;   // 供自动化测试核对各风格参数
