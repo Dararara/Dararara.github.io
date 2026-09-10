@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>夜之幸存者 Survivors · 小游戏合集</title>
+<link rel="stylesheet" href="./common.css">
+<style>
+  .arena {
+    position: relative;
+    width: 100%;
+    height: clamp(340px, 60vh, 600px);
+    background: #0c0e10;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #cv {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .bars {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    pointer-events: none;
+  }
+  .bar {
+    height: 9px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid var(--line-2);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .bar > i {
+    display: block;
+    height: 100%;
+    width: 100%;
+    transition: width 0.12s linear;
+  }
+  #hpFill { background: #4bbf73; }
+  #hpFill.low { background: #e5534b; }
+  #xpFill { background: #5aa9f0; }
+
+  .barlabel {
+    position: absolute;
+    right: 12px;
+    top: 26px;
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 0.06em;
+    pointer-events: none;
+  }
+
+  .flash {
+    position: absolute;
+    inset: 0;
+    background: #e5534b;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 武器 / 被动 栏 */
+  .loadout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+    min-height: 30px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border: 1px solid var(--line-2);
+    border-radius: 7px;
+    background: var(--panel);
+    font-size: 11px;
+    color: var(--dim);
+  }
+  .chip b {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .chip .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .chip.is-evo {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .chip.is-evo b { color: var(--accent); }
+  .chip.is-passive { opacity: 0.82; }
+
+  /* 卡片式选择界面 */
+  .picker {
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 12, 14, 0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 18px;
+    text-align: center;
+  }
+  .picker[hidden] { display: none; }
+  .picker-title {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+  .picker-sub {
+    font-size: 12px;
+    color: var(--dim);
+    font-family: var(--sans);
+  }
+  .cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    width: 100%;
+    max-width: 620px;
+  }
+  .pick {
+    flex: 1 1 168px;
+    max-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 13px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .pick:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .pick-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .pick-name {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .pick-tag {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--dim-2);
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    padding: 1px 5px;
+    flex: none;
+  }
+  .pick-tag.is-new { color: var(--accent); border-color: var(--accent-dim); }
+  .pick-tag.is-evo { color: #101214; background: var(--accent); border-color: var(--accent); }
+  .pick-desc {
+    font-size: 11.5px;
+    color: var(--dim);
+    font-family: var(--sans);
+    line-height: 1.55;
+    flex: 1;
+  }
+  .pick-key {
+    font-size: 10px;
+    color: var(--dim-2);
+  }
+
+  .result-grid {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 4px 0 6px;
+  }
+  .result-cell { display: flex; flex-direction: column; gap: 2px; }
+  .result-cell b {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .result-cell span {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--dim-2);
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <a class="back" href="./"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>返回合集</a>
+    <span class="brand">Game 05 / Survivors</span>
+  </div>
+
+  <h1 class="title">夜之幸存者 <span class="en">SURVIVORS</span></h1>
+  <p class="sub">你不需要瞄准，武器会自己开火。你唯一要做的是走位，然后活到黎明。</p>
+
+  <div class="hud">
+    <div class="hud-cell"><span class="hud-label">存活</span><span class="hud-value is-accent" id="hTime">00:00</span></div>
+    <div class="hud-cell"><span class="hud-label">等级</span><span class="hud-value" id="hLevel">1</span></div>
+    <div class="hud-cell"><span class="hud-label">击杀</span><span class="hud-value" id="hKills">0</span></div>
+    <div class="hud-cell"><span class="hud-label">最佳</span><span class="hud-value" id="hBest" style="font-size:16px">--</span></div>
+  </div>
+
+  <div class="loadout" id="loadout"></div>
+
+  <div class="stage" style="padding:0;background:transparent;border:none">
+    <div class="arena" id="arena">
+      <canvas id="cv"></canvas>
+
+      <div class="bars">
+        <div class="bar"><i id="hpFill"></i></div>
+        <div class="bar"><i id="xpFill" style="width:0%"></i></div>
+      </div>
+      <div class="barlabel" id="hpText">100 / 100</div>
+      <div class="flash" id="flash"></div>
+
+      <div class="picker" id="startScreen">
+        <div class="picker-title">活到黎明</div>
+        <div class="picker-sub">
+          <kbd style="font-family:var(--mono);border:1px solid var(--line-2);border-radius:4px;padding:1px 5px">WASD</kbd>
+          <kbd style="font-family:var(--mono);border:1px solid var(--line-2);border-radius:4px;padding:1px 5px">↑↓←→</kbd>
+          移动，手机上按住屏幕拖动 · 武器全自动开火
+        </div>
+        <button class="btn btn-primary" id="startBtn" style="margin-top:6px">开始逃亡</button>
+      </div>
+
+      <div class="picker" id="levelScreen" hidden>
+        <div class="picker-title" id="levelTitle">等级提升</div>
+        <div class="picker-sub">选择一项强化，点击卡片或按数字键</div>
+        <div class="cards" id="levelCards"></div>
+      </div>
+
+      <div class="picker" id="overScreen" hidden>
+        <div class="picker-title is-danger" id="overTitle">你倒下了</div>
+        <div class="result-grid" id="overStats"></div>
+        <div class="picker-sub" id="overHint">按回车重来</div>
+        <button class="btn btn-primary" id="againBtn">再来一局</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">
+    六种武器会自动索敌开火 · 击杀掉落经验宝石，升级三选一 · 武器练到 8 级且配套被动满级即可进化 ·
+    捡到烤鸡回血，精英怪掉宝箱 · 撑满 <strong style="color:var(--accent)">10 分钟</strong> 黎明降临即算生还，之后死神会来收人
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ==================== 常量配置 ==================== */
+
+  var WIN_TIME = 600;          // 撑满 600 秒（10 分钟）即胜利
+  var MAX_ENEMIES = 340;
+  var MAX_BULLETS = 220;
+  var MAX_GEMS = 320;
+  var MAX_FLOATS = 46;
+  var MAX_FX = 90;
+
+  // 武器：base 决定开火方式，进化后 id 变但 base 不变
+  var WEAPONS = {
+    whip:   { name: "鞭子",   max: 8, cd: 1.15, dmg: 11, color: "#f0997b", desc: "朝身前横扫，命中多个敌人" },
+    knife:  { name: "飞刀",   max: 8, cd: 0.72, dmg: 7,  color: "#c8ccd0", desc: "朝移动方向投出穿透飞刀" },
+    wand:   { name: "魔法杖", max: 8, cd: 1.05, dmg: 9,  color: "#5aa9f0", desc: "自动追踪最近的敌人" },
+    garlic: { name: "大蒜",   max: 8, cd: 0.55, dmg: 5,  color: "#9FE1CB", desc: "身周持续伤害并推开敌人" },
+    bible:  { name: "圣经",   max: 8, cd: 2.60, dmg: 10, color: "#dcc23a", desc: "环绕自身旋转的书页" },
+    bolt:   { name: "闪电",   max: 8, cd: 2.20, dmg: 17, color: "#a97fd6", desc: "随机劈击视野内的敌人" }
+  };
+
+  // 进化形态：武器满级 8 + 对应被动满级 5
+  var EVOLUTIONS = {
+    whip:   { id: "bloody_tear",    name: "血泪",     req: "hollow",  desc: "横扫范围翻倍，每次命中回复生命" },
+    knife:  { id: "thousand_edge",  name: "千刃",     req: "wings",   desc: "飞刀数量翻倍，无限穿透" },
+    wand:   { id: "holy_wand",      name: "圣杖",     req: "tome",    desc: "开火频率翻倍，弹体穿透增强" },
+    garlic: { id: "soul_eater",     name: "噬魂",     req: "candle",  desc: "光环大幅扩张，持续吸取生命" },
+    bible:  { id: "unholy_vespers", name: "邪魔晚祷", req: "spinach", desc: "书页数量翻倍，伤害提升" },
+    bolt:   { id: "thunder_loop",   name: "雷霆之环", req: "magnet",  desc: "落雷数量翻倍并造成二次打击" }
+  };
+
+  var PASSIVES = {
+    spinach: { name: "菠菜",     max: 5, color: "#5cc46a", desc: "造成的伤害 +10%" },
+    hollow:  { name: "空心之心", max: 5, color: "#e5534b", desc: "最大生命 +22，并立即回复" },
+    wings:   { name: "翅膀",     max: 5, color: "#5aa9f0", desc: "移动速度 +10%" },
+    candle:  { name: "蜡烛",     max: 5, color: "#e0a44a", desc: "攻击范围 +11%" },
+    magnet:  { name: "磁铁",     max: 5, color: "#4fd1c5", desc: "拾取范围 +32%" },
+    tome:    { name: "空之书",   max: 5, color: "#a97fd6", desc: "攻击冷却 -8%" }
+  };
+
+  // 敌人模板：from 表示第几秒开始出现
+  var ENEMY_TYPES = [
+    { id: "bat",    hp: 8,   speed: 78, dmg: 6,  r: 9,  color: "#a06fd6", xp: 1, from: 0,   shape: "tri" },
+    { id: "zombie", hp: 20,  speed: 47, dmg: 9,  r: 12, color: "#5cc46a", xp: 1, from: 65,  shape: "sq" },
+    { id: "skel",   hp: 34,  speed: 57, dmg: 11, r: 11, color: "#c8ccd0", xp: 2, from: 145, shape: "sq" },
+    { id: "ghost",  hp: 28,  speed: 106, dmg: 12, r: 10, color: "#5aa9f0", xp: 2, from: 235, shape: "tri" },
+    { id: "brute",  hp: 95,  speed: 41, dmg: 16, r: 17, color: "#e5534b", xp: 4, from: 350, shape: "sq" },
+    { id: "elite",  hp: 340, speed: 63, dmg: 22, r: 22, color: "#ffd200", xp: 12, from: 420, shape: "elite", chest: true }
+  ];
+
+  /* ==================== DOM ==================== */
+
+  var arena = document.getElementById("arena");
+  var cv = document.getElementById("cv");
+  var ctx = cv.getContext("2d");
+  var elTime = document.getElementById("hTime");
+  var elLevel = document.getElementById("hLevel");
+  var elKills = document.getElementById("hKills");
+  var elBest = document.getElementById("hBest");
+  var elLoadout = document.getElementById("loadout");
+  var hpFill = document.getElementById("hpFill");
+  var xpFill = document.getElementById("xpFill");
+  var hpText = document.getElementById("hpText");
+  var flash = document.getElementById("flash");
+  var startScreen = document.getElementById("startScreen");
+  var levelScreen = document.getElementById("levelScreen");
+  var levelTitle = document.getElementById("levelTitle");
+  var levelCards = document.getElementById("levelCards");
+  var overScreen = document.getElementById("overScreen");
+  var overTitle = document.getElementById("overTitle");
+  var overStats = document.getElementById("overStats");
+  var overHint = document.getElementById("overHint");
+  var BEST_KEY = "game.survivors.best";
+
+  /* ==================== 状态 ==================== */
+
+  var state = "idle";          // idle | playing | levelup | over
+  var W = 800, H = 480;        // 画布 CSS 尺寸
+  var P, enemies, bullets, gems, floats, fx, weapons, passives;
+  var time, kills, level, xp, xpNext, pendingLevels, spawnTimer, eliteTimer, reaperSpawned, survived;
+  var camX, camY, shakeT, damageT;
+  var best = 0;
+  var S;                       // 被动加成缓存
+  var keys = {};
+  var stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
+
+  /* ==================== 工具 ==================== */
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+  function dist2(ax, ay, bx, by) { var dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; }
+
+  function fmtTime(sec) {
+    var s = Math.max(0, Math.floor(sec));
+    var m = Math.floor(s / 60);
+    return (m < 10 ? "0" : "") + m + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
+  }
+
+  function readBest() {
+    try { return parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (e) { return 0; }
+  }
+
+  function writeBest(v) {
+    try {
+      if (v > readBest()) { localStorage.setItem(BEST_KEY, String(Math.floor(v))); return true; }
+    } catch (e) {}
+    return false;
+  }
+
+  /* ==================== 被动加成 ==================== */
+
+  function recalcStats() {
+    var s = { dmg: 1, area: 1, cd: 1, speed: 1, pickup: 1, maxHp: 100 };
+    for (var i = 0; i < passives.length; i++) {
+      var p = passives[i], lv = p.level;
+      if (p.id === "spinach") s.dmg *= 1 + 0.10 * lv;
+      else if (p.id === "hollow") s.maxHp += 22 * lv;
+      else if (p.id === "wings") s.speed *= 1 + 0.10 * lv;
+      else if (p.id === "candle") s.area *= 1 + 0.11 * lv;
+      else if (p.id === "magnet") s.pickup *= 1 + 0.32 * lv;
+      else if (p.id === "tome") s.cd *= Math.pow(0.92, lv);
+    }
+    var prevMax = S ? S.maxHp : 100;
+    S = s;
+    if (P && P.maxHp !== undefined && s.maxHp !== prevMax) {
+      var diff = s.maxHp - prevMax;
+      P.maxHp = s.maxHp;
+      if (diff > 0) P.hp = Math.min(P.maxHp, P.hp + diff);
+      else P.hp = Math.min(P.hp, P.maxHp);
+    }
+  }
+
+  function passiveLevel(id) {
+    for (var i = 0; i < passives.length; i++) if (passives[i].id === id) return passives[i].level;
+    return 0;
+  }
+
+  function hasWeapon(id) {
+    for (var i = 0; i < weapons.length; i++) if (weapons[i].id === id) return weapons[i];
+    return null;
+  }
+
+  function weaponDmg(w) {
+    var def = WEAPONS[w.base];
+    var mul = 1 + 0.18 * (w.level - 1);
+    if (w.evolved) mul *= 1.85;
+    return def.dmg * mul * S.dmg;
+  }
+
+  /* ==================== 初始化 ==================== */
+
+  function reset() {
+    P = {
+      x: 0, y: 0, r: 12, hp: 100, maxHp: 100, invul: 0,
+      fx: 1, fy: 0, speedBase: 168, hitFlash: 0
+    };
+    enemies = []; bullets = []; gems = []; floats = []; fx = [];
+    weapons = [{ id: "whip", base: "whip", level: 1, timer: 0.35, evolved: false, spin: 0 }];
+    passives = [];
+    time = 0; kills = 0; level = 1; xp = 0;
+    xpNext = 6;
+    pendingLevels = 0; spawnTimer = 0.4; eliteTimer = 26;
+    reaperSpawned = false; survived = false;
+    camX = 0; camY = 0; shakeT = 0; damageT = 0;
+    S = null;
+    recalcStats();
+    P.hp = P.maxHp;
+    syncHud();
+    renderLoadout();
+  }
+
+  /* ==================== 画布尺寸 ==================== */
+
+  function resize() {
+    var rect = arena.getBoundingClientRect();
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = Math.max(240, Math.round(rect.width));
+    H = Math.max(200, Math.round(rect.height));
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /* ==================== 输入 ==================== */
+
+  var MOVE_KEYS = {
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+    w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
+    W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0]
+  };
+
+  function inputVector() {
+    var x = 0, y = 0;
+    for (var k in MOVE_KEYS) if (keys[k]) { x += MOVE_KEYS[k][0]; y += MOVE_KEYS[k][1]; }
+    if (Math.abs(stick.dx) > 0.16 || Math.abs(stick.dy) > 0.16) { x = stick.dx; y = stick.dy; }
+    var len = Math.hypot(x, y);
+    if (len > 1) { x /= len; y /= len; }
+    return { x: x, y: y, len: Math.min(1, len) };
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (MOVE_KEYS[e.key]) { e.preventDefault(); keys[e.key] = true; }
+    if (state === "playing" || state === "paused") {
+      if (e.key === "p" || e.key === "P" || e.key === "Escape") togglePause();
+    }
+    if (state === "levelup" && (e.key === "1" || e.key === "2" || e.key === "3")) {
+      var cards = levelCards.querySelectorAll(".pick");
+      var idx = parseInt(e.key, 10) - 1;
+      if (cards[idx]) cards[idx].click();
+    }
+    if (state === "idle" && (e.key === " " || e.key === "Enter")) { e.preventDefault(); startGame(); }
+    if (state === "over" && e.key === "Enter") startGame();
+  });
+
+  document.addEventListener("keyup", function (e) {
+    if (MOVE_KEYS[e.key]) keys[e.key] = false;
+  });
+
+  cv.addEventListener("touchstart", function (e) {
+    if (stick.id !== null) return;
+    var t = e.changedTouches[0];
+    stick.id = t.identifier;
+    stick.ox = t.clientX; stick.oy = t.clientY;
+    stick.dx = 0; stick.dy = 0; stick.active = true;
+    e.preventDefault();
+  }, { passive: false });
+
+  cv.addEventListener("touchmove", function (e) {
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      if (t.identifier !== stick.id) continue;
+      var dx = t.clientX - stick.ox, dy = t.clientY - stick.oy;
+      var max = 46, d = Math.hypot(dx, dy);
+      if (d > max) { dx = dx / d * max; dy = dy / d * max; }
+      stick.dx = dx / max; stick.dy = dy / max;
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  function stickEnd(e) {
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === stick.id) {
+        stick.id = null; stick.active = false; stick.dx = 0; stick.dy = 0;
+      }
+    }
+  }
+  cv.addEventListener("touchend", stickEnd);
+  cv.addEventListener("touchcancel", stickEnd);
+
+  /* ==================== 敌人生成 ==================== */
+
+  function pickType() {
+    var pool = [];
+    for (var i = 0; i < ENEMY_TYPES.length; i++) {
+      var t = ENEMY_TYPES[i];
+      if (t.elite) continue;
+      if (time >= t.from) pool.push(t);
+    }
+    return pool[Math.floor(Math.random() * pool.length)] || ENEMY_TYPES[0];
+  }
+
+  function spawnAt(tpl, hpMul, isElite) {
+    var ang = Math.random() * Math.PI * 2;
+    var radius = Math.hypot(W, H) / 2 + 70;
+    var e = {
+      type: tpl.id,
+      x: P.x + Math.cos(ang) * radius,
+      y: P.y + Math.sin(ang) * radius,
+      r: tpl.r,
+      hp: tpl.hp * hpMul,
+      maxHp: tpl.hp * hpMul,
+      speed: tpl.speed * (1 + time / WIN_TIME * 0.28),
+      dmg: tpl.dmg * (1 + time / WIN_TIME * 0.55),
+      color: tpl.color,
+      xp: tpl.xp,
+      shape: tpl.shape,
+      chest: !!tpl.chest,
+      elite: !!tpl.elite,
+      hitCd: 0,
+      flash: 0,
+      kb: 0, kx: 0, ky: 0,
+      wob: Math.random() * 6.28
+    };
+    e.hp = e.maxHp;
+    enemies.push(e);
+    return e;
+  }
+
+  function difficulty() {
+    var p = clamp(time / WIN_TIME, 0, 1);
+    return {
+      interval: Math.max(0.16, 0.72 - p * 0.58),
+      batch: 1 + Math.floor(p * 10),
+      hpMul: 1 + p * 3.4,
+      dmgMul: 1 + p * 0.55
+    };
+  }
+
+  function spawnTick(dt) {
+    var d = difficulty();
+    spawnTimer -= dt;
+    if (spawnTimer <= 0 && enemies.length < MAX_ENEMIES) {
+      spawnTimer = d.interval;
+      var n = Math.min(d.batch, MAX_ENEMIES - enemies.length);
+      for (var i = 0; i < n; i++) spawnAt(pickType(), d.hpMul, false);
+    }
+
+    // 定时投放精英怪，随时间变频繁
+    eliteTimer -= dt;
+    if (eliteTimer <= 0 && enemies.length < MAX_ENEMIES) {
+      eliteTimer = Math.max(16, 34 - time / WIN_TIME * 16);
+      var elite = ENEMY_TYPES[ENEMY_TYPES.length - 1];
+      spawnAt(elite, d.hpMul * 0.85, true);
+    }
+
+    // 时间到，黎明降临
+    if (!survived && time >= WIN_TIME) {
+      survived = true;
+      enemies.length = 0;
+      showFloat(P.x, P.y - 40, "黎明降临", "#ffd200", 2.4, 22);
+      spawnReaper();
+    }
+  }
+
+  function spawnReaper() {
+    reaperSpawned = true;
+    var ang = Math.random() * Math.PI * 2;
+    var radius = Math.hypot(W, H) / 2 + 80;
+    var d = difficulty();
+    enemies.push({
+      type: "reaper", x: P.x + Math.cos(ang) * radius, y: P.y + Math.sin(ang) * radius,
+      r: 26, hp: 999999, maxHp: 999999,
+      speed: P.speedBase * S.speed * 1.16, dmg: 9999, color: "#e5534b", xp: 0, shape: "reaper",
+      chest: false, elite: true, reaper: true, hitCd: 0, flash: 0, kb: 0, kx: 0, ky: 0, wob: 0
+    });
+  }
+
+  /* ==================== 伤害 ==================== */
+
+  function damageEnemy(e, amount, showNum) {
+    if (e.reaper) return;
+    e.hp -= amount;
+    e.flash = 0.09;
+    if (showNum && floats.length < MAX_FLOATS) {
+      showFloat(e.x + rand(-5, 5), e.y - e.r - 3, Math.round(amount), "#ffffff", 0.55, 11);
+    }
+    if (e.hp <= 0) e.dead = true;
+  }
+
+  function showFloat(x, y, text, color, life, size) {
+    if (floats.length >= MAX_FLOATS) floats.shift();
+    floats.push({ x: x, y: y, text: text, color: color, life: life, max: life, size: size || 11 });
+  }
+
+  function addFx(o) {
+    if (fx.length >= MAX_FX) fx.shift();
+    fx.push(o);
+  }
+
+  function cleanupEnemies() {
+    for (var i = enemies.length - 1; i >= 0; i--) {
+      if (!enemies[i].dead) continue;
+      var e = enemies[i];
+      if (!e.reaper) {
+        kills++;
+        dropLoot(e);
+        for (var k = 0; k < 4; k++) {
+          addFx({
+            kind: "spark", x: e.x, y: e.y,
+            vx: rand(-70, 70), vy: rand(-70, 70),
+            life: 0.35, max: 0.35, color: e.color, size: rand(2, 4)
+          });
+        }
+      }
+      enemies.splice(i, 1);
+    }
+  }
+
+  function dropLoot(e) {
+    if (e.chest) {
+      gems.push({ kind: "chest", x: e.x, y: e.y, r: 11, t: 0, vx: 0, vy: 0 });
+      return;
+    }
+    gems.push({ kind: "xp", x: e.x, y: e.y, r: 5, value: e.xp, t: 0, vx: 0, vy: 0 });
+    if (Math.random() < 0.028) {
+      gems.push({ kind: "chicken", x: e.x + 10, y: e.y + 6, r: 7, t: 0, vx: 0, vy: 0 });
+    }
+  }
+
+  function damagePlayer(amount) {
+    if (P.invul > 0 || state !== "playing") return;
+    P.hp -= amount;
+    P.invul = 0.55;
+    P.hitFlash = 0.2;
+    damageT = 0.22;
+    shakeT = 0.16;
+    if (P.hp <= 0) { P.hp = 0; endGame(survived); }
+  }
+
+  /* ==================== 武器 ==================== */
+
+  function nearestEnemy(x, y) {
+    var bestD = Infinity, found = null;
+    for (var i = 0; i < enemies.length; i++) {
+      var e = enemies[i];
+      var d = dist2(x, y, e.x, e.y);
+      if (d < bestD) { bestD = d; found = e; }
+    }
+    return found;
+  }
+
+  function fireWeapon(w, dt) {
+    w.timer -= dt;
+    if (w.timer > 0) return;
+    var def = WEAPONS[w.base];
+    w.timer = Math.max(0.08, def.cd * S.cd * (w.evolved ? (w.base === "wand" ? 0.45 : 0.8) : 1));
+    var dmg = weaponDmg(w);
+    var area = S.area * (w.evolved ? 1.35 : 1);
+    var lv = w.level;
+
+    if (w.base === "whip") fireWhip(w, dmg, area, lv);
+    else if (w.base === "knife") fireKnife(w, dmg, area, lv);
+    else if (w.base === "wand") fireWand(w, dmg, lv);
+    else if (w.base === "garlic") fireGarlic(w, dmg, area, lv);
+    else if (w.base === "bible") fireBible(w, dmg, area, lv);
+    else if (w.base === "bolt") fireBolt(w, dmg, lv);
+  }
+
+  function fireWhip(w, dmg, area, lv) {
+    var fx0 = P.fx, fy0 = P.fy;
+    if (fx0 === 0 && fy0 === 0) fx0 = 1;
+    var reach = (52 + lv * 3) * area;
+    var half = (86 + lv * 5) * area;
+    var hits = 0;
+    for (var i = 0; i < enemies.length; i++) {
+      var e = enemies[i];
+      var dx = e.x - P.x, dy = e.y - P.y;
+      var along = dx * fx0 + dy * fy0;
+      var side = -dx * fy0 + dy * fx0;
+      if (along > -28 * area && along < reach && Math.abs(side) < half + e.r) {
+        damageEnemy(e, dmg, true);
+        hits++;
+        if (hits >= 2 + lv) break;
+      }
+    }
+    addFx({
+      kind: "slash", x: P.x, y: P.y, ang: Math.atan2(fy0, fx0),
+      reach: reach, half: half, life: 0.18, max: 0.18, color: WEAPONS.whip.color
+    });
+    if (w.evolved && hits > 0) {
+      P.hp = Math.min(P.maxHp, P.hp + hits);
+      showFloat(P.x, P.y - 20, "+" + hits, "#4bbf73", 0.6, 12);
+    }
+  }
+
+  function fireKnife(w, dmg, area, lv) {
+    var fx0 = P.fx, fy0 = P.fy;
+    if (fx0 === 0 && fy0 === 0) fx0 = 1;
+    var count = w.evolved ? 4 + Math.floor(lv / 2) : 1 + Math.floor(lv / 3);
+    var spread = 0.15;
+    var speed = 460;
+    var pierce = w.evolved ? 99 : 1 + Math.floor(lv / 4);
+    for (var i = 0; i < count; i++) {
+      var off = (i - (count - 1) / 2) * spread;
+      var ang = Math.atan2(fy0, fx0) + off;
+      if (bullets.length >= MAX_BULLETS) break;
+      bullets.push({
+        x: P.x, y: P.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+        r: 5, dmg: dmg, life: 1.1, pierce: pierce, color: WEAPONS.knife.color,
+        kind: "knife", ang: ang, hit: []
+      });
+    }
+  }
+
+  function fireWand(w, dmg, lv) {
+    var count = 1 + Math.floor(lv / 4) + (w.evolved ? 2 : 0);
+    for (var i = 0; i < count; i++) {
+      var target = nearestEnemy(P.x, P.y);
+      if (!target) return;
+      if (bullets.length >= MAX_BULLETS) return;
+      var ang = Math.atan2(target.y - P.y, target.x - P.x) + rand(-0.14, 0.14);
+      var speed = w.evolved ? 400 : 300;
+      bullets.push({
+        x: P.x, y: P.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+        r: 6, dmg: dmg, life: 2.2, pierce: w.evolved ? 3 : 0,
+        color: WEAPONS.wand.color, kind: "wand", homing: 3.4, hit: []
+      });
+    }
+  }
+
+  function fireGarlic(w, dmg, area, lv) {
+    var radius = (58 + lv * 5) * area * (w.evolved ? 1.5 : 1);
+    for (var i = 0; i < enemies.length; i++) {
+      var e = enemies[i];
+      var dd = Math.sqrt(dist2(P.x, P.y, e.x, e.y));
+      if (dd < radius + e.r) {
+        e.hitCd = Math.max(e.hitCd, 0.4);
+        damageEnemy(e, dmg, false);
+        var push = (e.elite || e.reaper) ? 6 : 26;
+        var nx = (e.x - P.x) / (dd || 1), ny = (e.y - P.y) / (dd || 1);
+        e.x += nx * push * 0.5; e.y += ny * push * 0.5;
+      }
+    }
+    if (w.evolved) P.hp = Math.min(P.maxHp, P.hp + 0.7);
+    addFx({ kind: "ring", x: P.x, y: P.y, r: radius, life: 0.22, max: 0.22, color: WEAPONS.garlic.color });
+  }
+
+  function fireBible(w, dmg, area, lv) {
+    var count = (1 + Math.floor(lv / 2)) * (w.evolved ? 2 : 1);
+    w.orbit = (w.orbit || 0) + 0.6;
+    addFx({
+      kind: "orbit", x: P.x, y: P.y, count: count, radius: (74 + lv * 4) * area,
+      start: w.orbit, life: 2.4, max: 2.4, color: WEAPONS.bible.color, dmg: dmg
+    });
+  }
+
+  function fireBolt(w, dmg, lv) {
+    var count = 1 + Math.floor(lv / 2) + (w.evolved ? 3 : 0);
+    var halfW = W / 2 + 40, halfH = H / 2 + 40;
+    for (var i = 0; i < count; i++) {
+      var pool = [];
+      for (var j = 0; j < enemies.length; j++) {
+        var e = enemies[j];
+        if (Math.abs(e.x - P.x) > halfW || Math.abs(e.y - P.y) > halfH) continue;
+        pool.push(e);
+      }
+      if (!pool.length) break;
+      var t = pool[Math.floor(Math.random() * pool.length)];
+      addFx({ kind: "bolt", x: t.x, y: t.y, life: 0.22, max: 0.22, color: WEAPONS.bolt.color, dmg: dmg, done: false });
+    }
+  }
+
+  /* 圣经光环：作用于 fx 中 kind==='orbit' 的持续对象 */
+  function updateOrbits(dt) {
+    for (var i = 0; i < fx.length; i++) {
+      var f = fx[i];
+      if (f.kind !== "orbit") continue;
+      f.start += dt * 2.6;
+      f.x = P.x; f.y = P.y;
+      var step = (Math.PI * 2) / f.count;
+      for (var c = 0; c < f.count; c++) {
+        var ang = f.start + step * c;
+        var bx = f.x + Math.cos(ang) * f.radius;
+        var by = f.y + Math.sin(ang) * f.radius;
+        for (var j = 0; j < enemies.length; j++) {
+          var e = enemies[j];
+          if (e.hitCd > 0) continue;
+          var rr = e.r + 10;
+          if (dist2(bx, by, e.x, e.y) < rr * rr) {
+            damageEnemy(e, f.dmg, true);
+            e.hitCd = 0.4;
+          }
+        }
+      }
+    }
+  }
+
+  /* ==================== 拾取 ==================== */
+
+  function updateGems(dt) {
+    var pickR = 30 * S.pickup;
+    for (var i = gems.length - 1; i >= 0; i--) {
+      var g = gems[i];
+      g.t += dt;
+      var dx = P.x - g.x, dy = P.y - g.y;
+      var d = Math.hypot(dx, dy);
+
+      if (g.kind === "chest") {
+        if (d < P.r + g.r + 4) { openChest(); gems.splice(i, 1); }
+        continue;
+      }
+
+      if (d < pickR) {
+        g.vx += (dx / (d || 1)) * 900 * dt;
+        g.vy += (dy / (d || 1)) * 900 * dt;
+      }
+      g.vx *= 0.9; g.vy *= 0.9;
+      g.x += g.vx * dt; g.y += g.vy * dt;
+
+      if (d < P.r + g.r + 2) {
+        if (g.kind === "xp") {
+          xp += g.value;
+          checkLevel();
+        } else if (g.kind === "chicken") {
+          P.hp = Math.min(P.maxHp, P.hp + 26);
+          showFloat(P.x, P.y - 22, "+26", "#4bbf73", 0.8, 13);
+        }
+        gems.splice(i, 1);
+      }
+    }
+  }
+
+  /* ==================== 升级 ==================== */
+
+  function checkLevel() {
+    while (xp >= xpNext) {
+      xp -= xpNext;
+      level++;
+      xpNext = Math.floor(6 + level * 3.6 + level * level * 0.42);
+      pendingLevels++;
+    }
+    if (pendingLevels > 0 && state === "playing") openLevelUp();
+  }
+
+  function buildChoices() {
+    var pool = [];
+    var i, w, def;
+
+    for (i = 0; i < weapons.length; i++) {
+      w = weapons[i];
+      if (w.level < WEAPONS[w.base].max) {
+        var evo = EVOLUTIONS[w.base], reqLv = passiveLevel(evo.req);
+        var canEvo = (w.level === WEAPONS[w.base].max - 1) && reqLv >= PASSIVES[evo.req].max;
+        pool.push({
+          kind: "weapon-up", id: w.base, ref: w,
+          name: WEAPONS[w.base].name, tag: "武器",
+          desc: "等级 " + w.level + " → " + (w.level + 1) + "　伤害提升",
+          willEvolve: canEvo, evoName: canEvo ? evo.name : null
+        });
+      }
+    }
+
+    if (weapons.length < 6) {
+      for (var key in WEAPONS) {
+        if (hasWeapon(key)) continue;
+        pool.push({
+          kind: "weapon-new", id: key, name: WEAPONS[key].name, tag: "新武器",
+          desc: WEAPONS[key].desc, isNew: true
+        });
+      }
+    }
+
+    for (var pid in PASSIVES) {
+      var lvNow = passiveLevel(pid);
+      if (lvNow >= PASSIVES[pid].max) continue;
+      pool.push({
+        kind: "passive", id: pid, name: PASSIVES[pid].name, tag: "被动",
+        desc: PASSIVES[pid].desc + "（" + lvNow + " → " + (lvNow + 1) + "/" + PASSIVES[pid].max + "）"
+      });
+    }
+
+    // 池子被抽空时给兜底奖励
+    if (!pool.length) {
+      pool.push({ kind: "heal", name: "烤鸡", tag: "回复", desc: "回复 40 点生命", isNew: true });
+      pool.push({ kind: "gold", name: "金币袋", tag: "战利品", desc: "本局金币 +25", isNew: true });
+    }
+
+    var picks = [];
+    while (picks.length < 3 && pool.length) {
+      picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    return picks;
+  }
+
+  function openLevelUp() {
+    state = "levelup";
+    levelTitle.textContent = "等级 " + level + " · 选择强化" + (pendingLevels > 1 ? "（还有 " + (pendingLevels - 1) + " 次）" : "");
+    var choices = buildChoices();
+    levelCards.innerHTML = "";
+    choices.forEach(function (c, idx) {
+      var el = document.createElement("div");
+      el.className = "pick";
+      var tagCls = c.willEvolve ? "pick-tag is-evo" : (c.isNew ? "pick-tag is-new" : "pick-tag");
+      var tagTxt = c.willEvolve ? "进化" : c.tag;
+      el.innerHTML =
+        '<div class="pick-top"><span class="pick-name"></span><span class="' + tagCls + '">' + tagTxt + '</span></div>' +
+        '<div class="pick-desc"></div>' +
+        '<div class="pick-key">按 ' + (idx + 1) + '</div>';
+      el.querySelector(".pick-name").textContent = c.name;
+      el.querySelector(".pick-desc").textContent = c.willEvolve ? ("进化为「" + c.evoName + "」") : c.desc;
+      el.addEventListener("click", function () { takeChoice(c); });
+      levelCards.appendChild(el);
+    });
+    levelScreen.hidden = false;
+  }
+
+  function takeChoice(c) {
+    if (c.kind === "weapon-up") {
+      c.ref.level++;
+      if (c.willEvolve) evolveWeapon(c.ref);
+    } else if (c.kind === "weapon-new") {
+      weapons.push({ id: c.id, base: c.id, level: 1, timer: 0.2, evolved: false });
+    } else if (c.kind === "passive") {
+      var found = null;
+      for (var i = 0; i < passives.length; i++) if (passives[i].id === c.id) found = passives[i];
+      if (found) found.level++;
+      else passives.push({ id: c.id, level: 1 });
+      recalcStats();
+    } else if (c.kind === "heal") {
+      P.hp = Math.min(P.maxHp, P.hp + 40);
+    }
+
+    pendingLevels--;
+    levelScreen.hidden = true;
+    renderLoadout();
+    syncHud();
+
+    if (pendingLevels > 0) openLevelUp();
+    else state = "playing";
+  }
+
+  function evolveWeapon(w) {
+    var evo = EVOLUTIONS[w.base];
+    w.evolved = true;
+    w.evoId = evo.id;
+    showFloat(P.x, P.y - 34, "进化：" + evo.name, "#ffd200", 2.2, 16);
+    addFx({ kind: "ring", x: P.x, y: P.y, r: 120, life: 0.6, max: 0.6, color: "#ffd200" });
+  }
+
+  function checkEvolutions() {
+    for (var i = 0; i < weapons.length; i++) {
+      var w = weapons[i];
+      if (w.evolved) continue;
+      var evo = EVOLUTIONS[w.base];
+      if (w.level >= WEAPONS[w.base].max && passiveLevel(evo.req) >= PASSIVES[evo.req].max) {
+        evolveWeapon(w);
+        renderLoadout();
+      }
+    }
+  }
+
+  function openChest() {
+    var options = [];
+    for (var i = 0; i < weapons.length; i++) {
+      if (weapons[i].level < WEAPONS[weapons[i].base].max) options.push({ t: "w", ref: weapons[i] });
+    }
+    for (var pid in PASSIVES) {
+      var lvNow = passiveLevel(pid);
+      if (lvNow < PASSIVES[pid].max) options.push({ t: "p", id: pid });
+    }
+    if (!options.length) { P.hp = Math.min(P.maxHp, P.hp + 50); return; }
+
+    var gift = options[Math.floor(Math.random() * options.length)];
+    if (gift.t === "w") {
+      gift.ref.level++;
+      showFloat(P.x, P.y - 30, "宝箱：" + WEAPONS[gift.ref.base].name + " 升级", "#ffd200", 1.8, 14);
+    } else {
+      var found = null;
+      for (var j = 0; j < passives.length; j++) if (passives[j].id === gift.id) found = passives[j];
+      if (found) found.level++;
+      else passives.push({ id: gift.id, level: 1 });
+      recalcStats();
+      showFloat(P.x, P.y - 30, "宝箱：" + PASSIVES[gift.id].name + " 升级", "#ffd200", 1.8, 14);
+    }
+    checkEvolutions();
+    renderLoadout();
+  }
+
+  /* ==================== 更新 ==================== */
+
+  function update(dt) {
+    time += dt;
+
+    // ---- 玩家移动
+    var mv = inputVector();
+    if (mv.len > 0.02) {
+      P.fx = mv.x; P.fy = mv.y;
+      var sp = P.speedBase * S.speed;
+      P.x += mv.x * sp * dt;
+      P.y += mv.y * sp * dt;
+    }
+    if (P.invul > 0) P.invul -= dt;
+    if (P.hitFlash > 0) P.hitFlash -= dt;
+    camX = P.x; camY = P.y;
+
+    // ---- 武器
+    for (var i = 0; i < weapons.length; i++) fireWeapon(weapons[i], dt);
+    updateOrbits(dt);
+
+    // ---- 敌人生成
+    spawnTick(dt);
+
+    // ---- 敌人移动与接触伤害
+    for (var j = 0; j < enemies.length; j++) {
+      var e = enemies[j];
+      var dx = P.x - e.x, dy = P.y - e.y;
+      var d = Math.hypot(dx, dy) || 1;
+      var nx = dx / d, ny = dy / d;
+      e.x += nx * e.speed * dt;
+      e.y += ny * e.speed * dt;
+      e.wob += dt * 6;
+      if (e.hitCd > 0) e.hitCd -= dt;
+      if (e.flash > 0) e.flash -= dt;
+
+      if (d < e.r + P.r) damagePlayer(e.dmg);
+    }
+
+    // ---- 子弹
+    for (var b = bullets.length - 1; b >= 0; b--) {
+      var bl = bullets[b];
+      if (bl.homing) {
+        var tg = nearestEnemy(bl.x, bl.y);
+        if (tg) {
+          var ang = Math.atan2(tg.y - bl.y, tg.x - bl.x);
+          var cur = Math.atan2(bl.vy, bl.vx);
+          var diff = Math.atan2(Math.sin(ang - cur), Math.cos(ang - cur));
+          cur += clamp(diff, -bl.homing * dt, bl.homing * dt);
+          var sp2 = Math.hypot(bl.vx, bl.vy);
+          bl.vx = Math.cos(cur) * sp2;
+          bl.vy = Math.sin(cur) * sp2;
+        }
+      }
+      bl.x += bl.vx * dt;
+      bl.y += bl.vy * dt;
+      bl.life -= dt;
+      if (bl.life <= 0) { bullets.splice(b, 1); continue; }
+
+      var removed = false;
+      for (var k = 0; k < enemies.length; k++) {
+        var en = enemies[k];
+        if (en.dead) continue;
+        var rr = en.r + bl.r;
+        if (dist2(bl.x, bl.y, en.x, en.y) < rr * rr) {
+          if (bl.hit.indexOf(en) >= 0) continue;
+          damageEnemy(en, bl.dmg, true);
+          bl.hit.push(en);
+          bl.pierce--;
+          if (bl.pierce < 0) { bullets.splice(b, 1); removed = true; break; }
+        }
+      }
+      if (removed) continue;
+    }
+
+    // ---- 特效推进（闪电在此时结算伤害）
+    for (var f = fx.length - 1; f >= 0; f--) {
+      var o = fx[f];
+      o.life -= dt;
+      if (o.kind === "spark") { o.x += o.vx * dt; o.y += o.vy * dt; o.vx *= 0.92; o.vy *= 0.92; }
+      if (o.kind === "bolt" && !o.done) {
+        o.done = true;
+        for (var q = 0; q < enemies.length; q++) {
+          var en2 = enemies[q];
+          var rr2 = en2.r + 26;
+          if (dist2(o.x, o.y, en2.x, en2.y) < rr2 * rr2) damageEnemy(en2, o.dmg, true);
+        }
+      }
+      if (o.life <= 0) fx.splice(f, 1);
+    }
+
+    cleanupEnemies();
+    updateGems(dt);
+    checkEvolutions();
+
+    // ---- 飘字
+    for (var p2 = floats.length - 1; p2 >= 0; p2--) {
+      var fl = floats[p2];
+      fl.life -= dt;
+      fl.y -= 16 * dt;
+      if (fl.life <= 0) floats.splice(p2, 1);
+    }
+
+    if (shakeT > 0) shakeT -= dt;
+    if (damageT > 0) {
+      damageT -= dt;
+      flash.style.opacity = String(clamp(damageT * 1.1, 0, 0.3));
+    } else flash.style.opacity = "0";
+
+    syncHud();
+  }
+
+  /* ==================== 渲染 ==================== */
+
+  function worldToScreen(x, y) {
+    return { x: x - camX + W / 2, y: y - camY + H / 2 };
+  }
+
+  function render() {
+    var sx = 0, sy = 0;
+    if (shakeT > 0) { sx = rand(-3, 3); sy = rand(-3, 3); }
+
+    ctx.save();
+    ctx.translate(sx, sy);
+
+    // 背景
+    ctx.fillStyle = "#0c0e10";
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+
+    // 网格
+    var gs = 64;
+    var ox = (-camX + W / 2) % gs;
+    var oy = (-camY + H / 2) % gs;
+    ctx.strokeStyle = "rgba(255,255,255,0.032)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var gx = ox - gs; gx < W + gs; gx += gs) { ctx.moveTo(gx, 0); ctx.lineTo(gx, H); }
+    for (var gy = oy - gs; gy < H + gs; gy += gs) { ctx.moveTo(0, gy); ctx.lineTo(W, gy); }
+    ctx.stroke();
+
+    var left = camX - W / 2 - 50, right = camX + W / 2 + 50;
+    var top = camY - H / 2 - 50, bottom = camY + H / 2 + 50;
+
+    // 拾取物
+    for (var i = 0; i < gems.length; i++) {
+      var g = gems[i];
+      if (g.x < left || g.x > right || g.y < top || g.y > bottom) continue;
+      var p = worldToScreen(g.x, g.y);
+      var pulse = 0.75 + 0.25 * Math.sin(g.t * 7);
+      if (g.kind === "xp") {
+        ctx.fillStyle = "#4fd1c5";
+        ctx.globalAlpha = pulse;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - g.r); ctx.lineTo(p.x + g.r, p.y);
+        ctx.lineTo(p.x, p.y + g.r); ctx.lineTo(p.x - g.r, p.y);
+        ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 1;
+      } else if (g.kind === "chicken") {
+        ctx.fillStyle = "#e0a44a";
+        ctx.beginPath(); ctx.arc(p.x, p.y, g.r, 0, 6.283); ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(p.x - 2, p.y - 2, 2, 0, 6.283); ctx.fill();
+      } else {
+        ctx.fillStyle = "#ffd200";
+        ctx.fillRect(p.x - 9, p.y - 7, 18, 14);
+        ctx.fillStyle = "#101214";
+        ctx.fillRect(p.x - 9, p.y - 2, 18, 3);
+      }
+    }
+
+    // 光环类特效（大蒜 / 进化）
+    for (var f = 0; f < fx.length; f++) {
+      var o = fx[f];
+      var k = o.life / o.max;
+      if (o.kind === "ring") {
+        var rp = worldToScreen(o.x, o.y);
+        ctx.globalAlpha = k * 0.5;
+        ctx.strokeStyle = o.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(rp.x, rp.y, o.r * (1.15 - k * 0.25), 0, 6.283); ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else if (o.kind === "slash") {
+        var sp = worldToScreen(o.x, o.y);
+        ctx.save();
+        ctx.translate(sp.x, sp.y);
+        ctx.rotate(o.ang);
+        ctx.globalAlpha = k * 0.55;
+        ctx.fillStyle = o.color;
+        ctx.beginPath();
+        ctx.moveTo(-26, -o.half * 0.55);
+        ctx.quadraticCurveTo(o.reach * 1.05, 0, -26, o.half * 0.55);
+        ctx.quadraticCurveTo(o.reach * 0.5, 0, -26, -o.half * 0.55);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      } else if (o.kind === "spark") {
+        var kp = worldToScreen(o.x, o.y);
+        ctx.globalAlpha = k;
+        ctx.fillStyle = o.color;
+        ctx.fillRect(kp.x - o.size / 2, kp.y - o.size / 2, o.size, o.size);
+        ctx.globalAlpha = 1;
+      } else if (o.kind === "bolt") {
+        var bp = worldToScreen(o.x, o.y);
+        ctx.globalAlpha = k;
+        ctx.strokeStyle = o.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(bp.x, bp.y - 60);
+        ctx.lineTo(bp.x - 6, bp.y - 24);
+        ctx.lineTo(bp.x + 5, bp.y - 14);
+        ctx.lineTo(bp.x, bp.y + 8);
+        ctx.stroke();
+        ctx.fillStyle = o.color;
+        ctx.beginPath(); ctx.arc(bp.x, bp.y, 12 * (1.2 - k), 0, 6.283); ctx.fill();
+        ctx.globalAlpha = 1;
+      } else if (o.kind === "orbit") {
+        var step = (Math.PI * 2) / o.count;
+        for (var c = 0; c < o.count; c++) {
+          var ang2 = o.start + step * c;
+          var ob = worldToScreen(o.x + Math.cos(ang2) * o.radius, o.y + Math.sin(ang2) * o.radius);
+          ctx.save();
+          ctx.translate(ob.x, ob.y);
+          ctx.rotate(ang2 + Math.PI / 2);
+          ctx.fillStyle = o.color;
+          ctx.fillRect(-5, -7, 10, 14);
+          ctx.fillStyle = "rgba(255,255,255,0.5)";
+          ctx.fillRect(-5, -7, 10, 3);
+          ctx.restore();
+        }
+      }
+    }
+
+    // 敌人
+    for (var j = 0; j < enemies.length; j++) {
+      var e = enemies[j];
+      if (e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
+      var ep = worldToScreen(e.x, e.y);
+      ctx.fillStyle = e.flash > 0 ? "#ffffff" : e.color;
+      if (e.shape === "tri") {
+        ctx.beginPath();
+        ctx.moveTo(ep.x, ep.y - e.r);
+        ctx.lineTo(ep.x + e.r, ep.y + e.r * 0.7);
+        ctx.lineTo(ep.x - e.r, ep.y + e.r * 0.7);
+        ctx.closePath(); ctx.fill();
+      } else if (e.shape === "elite" || e.shape === "reaper") {
+        ctx.beginPath(); ctx.arc(ep.x, ep.y, e.r, 0, 6.283); ctx.fill();
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.beginPath(); ctx.arc(ep.x, ep.y, e.r * 0.55, 0, 6.283); ctx.fill();
+        if (e.shape === "reaper") {
+          ctx.strokeStyle = "#e5534b";
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(ep.x, ep.y, e.r + 6, 0, 6.283); ctx.stroke();
+        }
+      } else {
+        ctx.fillRect(ep.x - e.r, ep.y - e.r * 0.92, e.r * 2, e.r * 1.84);
+      }
+      if (e.elite && e.maxHp > 0) {
+        var w2 = e.r * 2;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(ep.x - w2 / 2, ep.y - e.r - 7, w2, 3);
+        ctx.fillStyle = "#e5534b";
+        ctx.fillRect(ep.x - w2 / 2, ep.y - e.r - 7, w2 * clamp(e.hp / e.maxHp, 0, 1), 3);
+      }
+    }
+
+    // 子弹
+    for (var b2 = 0; b2 < bullets.length; b2++) {
+      var bu = bullets[b2];
+      var bup = worldToScreen(bu.x, bu.y);
+      ctx.fillStyle = bu.color;
+      if (bu.kind === "knife") {
+        ctx.save();
+        ctx.translate(bup.x, bup.y);
+        ctx.rotate(bu.ang + Math.PI / 2);
+        ctx.fillRect(-2.5, -8, 5, 16);
+        ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.arc(bup.x, bup.y, bu.r, 0, 6.283); ctx.fill();
+      }
+    }
+
+    // 玩家
+    var pp = worldToScreen(P.x, P.y);
+    var blink = P.invul > 0 && Math.floor(P.invul * 18) % 2 === 0;
+    ctx.globalAlpha = blink ? 0.45 : 1;
+    ctx.fillStyle = P.hitFlash > 0 ? "#ffffff" : "#ffd200";
+    ctx.beginPath(); ctx.arc(pp.x, pp.y, P.r, 0, 6.283); ctx.fill();
+    ctx.fillStyle = "#101214";
+    ctx.beginPath();
+    ctx.arc(pp.x + P.fx * 5, pp.y + P.fy * 5, 3.4, 0, 6.283);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // 飘字
+    for (var fi = 0; fi < floats.length; fi++) {
+      var fo = floats[fi];
+      var fp = worldToScreen(fo.x, fo.y);
+      ctx.globalAlpha = clamp(fo.life / fo.max, 0, 1);
+      ctx.fillStyle = fo.color;
+      ctx.font = "600 " + fo.size + "px " + "ui-monospace, Menlo, monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(String(fo.text), fp.x, fp.y);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+
+    // 触屏摇杆
+    if (stick.active) {
+      var r0 = arena.getBoundingClientRect();
+      var cx = stick.ox - r0.left, cy = stick.oy - r0.top;
+      ctx.strokeStyle = "rgba(255,255,255,0.28)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, 46, 0, 6.283); ctx.stroke();
+      ctx.fillStyle = "rgba(255,210,0,0.55)";
+      ctx.beginPath(); ctx.arc(cx + stick.dx * 46, cy + stick.dy * 46, 17, 0, 6.283); ctx.fill();
+    }
+
+    // 死神警告
+    if (reaperSpawned) {
+      ctx.fillStyle = "rgba(229,83,75," + (0.06 + 0.04 * Math.sin(performance.now() / 260)) + ")";
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  /* ==================== HUD ==================== */
+
+  function syncHud() {
+    elTime.textContent = fmtTime(time);
+    elLevel.textContent = level;
+    elKills.textContent = kills;
+    var hpPct = clamp(P.hp / P.maxHp, 0, 1) * 100;
+    hpFill.style.width = hpPct + "%";
+    hpFill.className = hpPct < 30 ? "low" : "";
+    hpText.textContent = Math.ceil(P.hp) + " / " + Math.round(P.maxHp);
+    xpFill.style.width = clamp(xp / xpNext, 0, 1) * 100 + "%";
+  }
+
+  function renderLoadout() {
+    var parts = [];
+    for (var i = 0; i < weapons.length; i++) {
+      var w = weapons[i];
+      var evo = EVOLUTIONS[w.base];
+      var label = w.evolved ? evo.name : WEAPONS[w.base].name;
+      parts.push('<span class="chip' + (w.evolved ? " is-evo" : "") + '">' +
+        '<i class="dot" style="background:' + WEAPONS[w.base].color + '"></i>' +
+        "<b>" + label + "</b>" + (w.evolved ? " MAX" : " " + w.level) + "</span>");
+    }
+    for (var j = 0; j < passives.length; j++) {
+      var p = passives[j];
+      parts.push('<span class="chip is-passive">' +
+        '<i class="dot" style="background:' + PASSIVES[p.id].color + '"></i>' +
+        PASSIVES[p.id].name + " " + p.level + "/" + PASSIVES[p.id].max + "</span>");
+    }
+    elLoadout.innerHTML = parts.join("");
+  }
+
+  function updateBest() {
+    var b = readBest();
+    elBest.textContent = b > 0 ? fmtTime(b) : "--";
+  }
+
+  /* ==================== 流程 ==================== */
+
+  function startGame() {
+    reset();
+    startScreen.hidden = true;
+    levelScreen.hidden = true;
+    overScreen.hidden = true;
+    flash.style.opacity = "0";
+    state = "playing";
+  }
+
+  function togglePause() {
+    if (state === "playing") {
+      state = "paused";
+      levelTitle.textContent = "已暂停";
+      levelCards.innerHTML = '<div class="picker-sub">按 P 或 Esc 继续</div>';
+      levelScreen.hidden = false;
+    } else if (state === "paused") {
+      levelScreen.hidden = true;
+      state = "playing";
+    }
+  }
+
+  function endGame(won) {
+    state = "over";
+    var secs = Math.floor(time);
+    var isBest = writeBest(secs);
+    updateBest();
+    overTitle.textContent = won ? "你活到了黎明" : "你倒下了";
+    overTitle.className = "picker-title" + (won ? "" : " is-danger");
+    overStats.innerHTML =
+      '<div class="result-cell"><b>' + fmtTime(secs) + "</b><span>存活</span></div>" +
+      '<div class="result-cell"><b>' + level + "</b><span>等级</span></div>" +
+      '<div class="result-cell"><b>' + kills + "</b><span>击杀</span></div>" +
+      '<div class="result-cell"><b>' + (isBest ? "新纪录" : fmtTime(readBest())) + "</b><span>最佳</span></div>";
+    overHint.textContent = won ? "按回车再战" : "按回车重来";
+    overScreen.hidden = false;
+  }
+
+  /* ==================== 主循环 ==================== */
+
+  var last = 0;
+
+  function loop(t) {
+    var dt = last ? Math.min((t - last) / 1000, 0.05) : 0;
+    last = t;
+
+    if (state === "playing") update(dt);
+    else if (state === "over") { /* 冻结画面 */ }
+
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  /* ==================== 启动 ==================== */
+
+  document.getElementById("startBtn").addEventListener("click", startGame);
+  document.getElementById("againBtn").addEventListener("click", startGame);
+
+  window.addEventListener("resize", resize);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(arena);
+
+  // 调试探针：仅用于自动化测试读数，不影响正常游玩
+  window.__DBG = function () {
+    return {
+      state: state,
+      time: Math.round(time * 10) / 10,
+      enemies: enemies.length,
+      bullets: bullets.length,
+      gems: gems.length,
+      kills: kills,
+      level: level,
+      xp: xp,
+      hp: Math.round(P.hp),
+      canvas: W + "x" + H,
+      weaponTimers: weapons.map(function (x) { return Math.round(x.timer * 100) / 100; })
+    };
+  };
+
+  best = readBest();
+  resize();
+  reset();
+  updateBest();
+  state = "idle";
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -80,13 +80,13 @@
 <div class="shell">
   <div class="topbar">
     <a class="back" href="../"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>返回博客</a>
-    <span class="brand">Game Collection / 4 Titles</span>
+    <span class="brand">Game Collection / 5 Titles</span>
   </div>
 
   <div class="hero">
     <h1 class="hero-title">小游戏合集<span class="en">ARCADE ARCHIVE</span></h1>
     <p class="hero-desc">
-      四个纯前端实现的小游戏，没有任何依赖，不需要联网，打开就能玩。
+      五个纯前端实现的小游戏，没有任何依赖，不需要联网，打开就能玩。
       键盘和触屏都支持，分数与纪录保存在你自己的浏览器里。
     </p>
   </div>
@@ -131,11 +131,21 @@
         <span>初级纪录 <strong data-best="minesweeper">--</strong></span>
       </span>
     </a>
+
+    <a class="card" href="./survivors.html">
+      <span class="card-no">GAME 05</span>
+      <span class="card-name">夜之幸存者<span class="en">SURVIVORS</span></span>
+      <span class="card-desc">武器全自动开火，你只负责走位。杀穿十分钟的怪潮，捡宝石升级、凑齐进化，活到黎明。</span>
+      <span class="card-meta">
+        <span>WASD / 触屏摇杆</span>
+        <span>最佳存活 <strong data-best="survivors">--</strong></span>
+      </span>
+    </a>
   </div>
 
   <div class="stats">
     <div class="stat"><span class="stat-num" id="plays">0</span><span class="stat-label">本机游玩次数</span></div>
-    <div class="stat"><span class="stat-num">4</span><span class="stat-label">收录游戏</span></div>
+    <div class="stat"><span class="stat-num">5</span><span class="stat-label">收录游戏</span></div>
     <div class="stat"><span class="stat-num">0 KB</span><span class="stat-label">外部依赖</span></div>
   </div>
 
@@ -156,11 +166,17 @@
     snake: { key: "game.snake.best", unit: " 分" },
     tetris: { key: "game.tetris.best", unit: " 分" },
     g2048: { key: "game.2048.best", unit: " 分" },
-    minesweeper: { key: "game.minesweeper.best.easy", unit: " 秒" }
+    minesweeper: { key: "game.minesweeper.best.easy", unit: " 秒", blank: "--" },
+    survivors: { key: "game.survivors.best", unit: " 秒", blank: "--", asTime: true }
   };
 
   function read(key) {
     try { return parseInt(localStorage.getItem(key) || "0", 10) || 0; } catch (e) { return 0; }
+  }
+
+  function fmtTime(sec) {
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
   }
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-best]"), function (el) {
@@ -168,7 +184,8 @@
     var cfg = KEYS[id];
     if (!cfg) return;
     var v = read(cfg.key);
-    el.textContent = v > 0 ? v + cfg.unit : (id === "minesweeper" ? "--" : "0");
+    if (v <= 0) { el.textContent = cfg.blank || "0"; return; }
+    el.textContent = cfg.asTime ? fmtTime(v) : v + cfg.unit;
   });
 
   var visits = 0;
