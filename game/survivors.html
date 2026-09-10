@@ -289,6 +289,23 @@
   }
   .auto-badge[hidden] { display: none; }
 
+  /* 进入特殊地形时的说明条 */
+  .terrain-tag {
+    position: absolute;
+    left: 50%;
+    top: 40px;
+    transform: translateX(-50%);
+    padding: 4px 13px;
+    border: 1px solid var(--line-2);
+    border-radius: 7px;
+    background: rgba(16, 18, 20, 0.82);
+    color: var(--text);
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .terrain-tag[hidden] { display: none; }
+
   /* 常驻小地图：随时知道自己在欧洲哪儿 */
   .minimap {
     position: absolute;
@@ -369,6 +386,7 @@
     <div class="hud-cell"><span class="hud-label">等级</span><span class="hud-value" id="hLevel">1</span></div>
     <div class="hud-cell"><span class="hud-label">击杀</span><span class="hud-value" id="hKills">0</span></div>
     <div class="hud-cell"><span class="hud-label">最佳</span><span class="hud-value" id="hBest" style="font-size:16px">--</span></div>
+    <div class="hud-cell"><span class="hud-label">地形</span><span class="hud-value is-accent" id="hTerrain" style="font-size:16px">平原</span></div>
   </div>
 
   <div class="loadout" id="loadout"></div>
@@ -383,6 +401,7 @@
         <div class="bar"><i id="xpFill" style="width:0%"></i></div>
       </div>
       <div class="barlabel" id="hpText">100 / 100</div>
+      <div class="terrain-tag" id="terrainTag" hidden></div>
       <div class="flash" id="flash"></div>
       <div class="auto-badge" id="autoBadge" hidden>自动托管中 · 按 T 接管</div>
       <canvas class="minimap" id="mini" width="180" height="144" title="你在欧洲的位置"></canvas>
@@ -436,7 +455,13 @@
     六种武器会自动索敌开火 · 击杀掉落经验宝石，升级三选一 · 武器练到 8 级且配套被动满级即可进化 ·
     捡到烤鸡回血，精英怪掉宝箱 · 撑满 <strong style="color:var(--accent)">10 分钟</strong> 黎明降临即算生还，之后死神会来收人<br>
     右下角小地图随时显示你在欧洲的位置 · 按 <strong style="color:var(--accent)">M</strong> 查看全欧洲大地图 ·
-    滚轮或右下角按钮调节缩放（视野越远越容易躲避，但也越难看清细节）
+    滚轮或右下角按钮调节缩放（视野越远越容易躲避，但也越难看清细节）<br>
+    地形会真的影响战局：<strong style="color:var(--accent)">森林</strong>拖住敌人 ·
+    <strong style="color:var(--accent)">山地</strong>攻击范围 +30% ·
+    <strong style="color:var(--accent)">沙滩</strong>拾取 +40% ·
+    <strong style="color:var(--accent)">雪原</strong>冷却 -12% ·
+    <strong style="color:var(--accent)">浅水</strong>缓慢回血 ·
+    <strong style="color:var(--accent)">深水</strong>持续掉血
   </div>
 </div>
 
@@ -532,6 +557,8 @@
   var bigCtx = bigCv.getContext("2d");
   var mapScreen = document.getElementById("mapScreen");
   var zoomVal = document.getElementById("zoomVal");
+  var terrainTag = document.getElementById("terrainTag");
+  var elTerrain = document.getElementById("hTerrain");
   var levelScreen = document.getElementById("levelScreen");
   var levelTitle = document.getElementById("levelTitle");
   var levelCards = document.getElementById("levelCards");
@@ -561,6 +588,9 @@
   var zoom = 1;                // 相机缩放：<1 视野更远，>1 视野更近
   var miniBase = null;         // 小地图底图（预渲染一次）
   var bigBase = null;          // 大地图底图
+  var curTerrain = "grass";    // 玩家当前所在地形
+  var terrMul = { speed: 1, area: 1, cd: 1, pickup: 1 };   // 地形带来的临时加成
+  var terrMemo = { x: -1e9, y: -1e9 };                     // 地形采样节流
   var keys = {};
   var stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
 
@@ -650,6 +680,11 @@
     pendingLevels = 0; spawnTimer = 0.4; eliteTimer = 26;
     reaperSpawned = false; survived = false;
     camX = 0; camY = 0; shakeT = 0; damageT = 0;
+    curTerrain = "grass";
+    terrMul.speed = 1; terrMul.area = 1; terrMul.cd = 1; terrMul.pickup = 1;
+    terrMemo.x = -1e9; terrMemo.y = -1e9;
+    if (terrainTagTimer) { clearTimeout(terrainTagTimer); terrainTagTimer = null; }
+    terrainTag.hidden = true;
     S = null;
     recalcStats();
     P.hp = P.maxHp;
@@ -999,9 +1034,9 @@
     w.timer -= dt;
     if (w.timer > 0) return;
     var def = WEAPONS[w.base];
-    w.timer = Math.max(0.08, def.cd * S.cd * (w.evolved ? (w.base === "wand" ? 0.45 : 0.8) : 1));
+    w.timer = Math.max(0.08, def.cd * S.cd * terrMul.cd * (w.evolved ? (w.base === "wand" ? 0.45 : 0.8) : 1));
     var dmg = weaponDmg(w);
-    var area = S.area * (w.evolved ? 1.35 : 1);
+    var area = S.area * terrMul.area * (w.evolved ? 1.35 : 1);
     var lv = w.level;
 
     if (w.base === "whip") fireWhip(w, dmg, area, lv);
@@ -1155,9 +1190,10 @@
   }
 
   function updateGems(dt) {
-    var magnetR = 46 * S.pickup;      // 进入这个范围就锁定吸附，速度拉满
+    var pick = S.pickup * terrMul.pickup;
+    var magnetR = 46 * pick;          // 进入这个范围就锁定吸附，速度拉满
     var grabR = P.r + 7;
-    var pullBase = 96 * S.pickup;     // 磁铁被动同时提升整体回收速度
+    var pullBase = 96 * pick;         // 磁铁被动与地形共同决定回收速度
 
     for (var i = gems.length - 1; i >= 0; i--) {
       var g = gems[i];
@@ -1385,6 +1421,9 @@
   function update(dt) {
     time += dt;
 
+    // ---- 地形：先刷新玩家所在地形带来的临时加成
+    updatePlayerTerrain();
+
     // ---- 玩家移动：自动托管时由 AI 接管方向
     var mv;
     if (autoPlay) {
@@ -1396,13 +1435,21 @@
     }
     if (mv.len > 0.02) {
       P.fx = mv.x; P.fy = mv.y;
-      var sp = P.speedBase * S.speed;
+      var sp = P.speedBase * S.speed * terrMul.speed;
       P.x += mv.x * sp * dt;
       P.y += mv.y * sp * dt;
     }
     if (P.invul > 0) P.invul -= dt;
     if (P.hitFlash > 0) P.hitFlash -= dt;
     camX = P.x; camY = P.y;
+
+    // ---- 地形对生命的持续影响：浅水回血、深水掉血
+    var tTrait = TERRAIN_TRAITS[curTerrain] || {};
+    if (tTrait.regen) P.hp = Math.min(P.maxHp, P.hp + tTrait.regen * dt);
+    if (tTrait.drain) {
+      P.hp -= tTrait.drain * dt;
+      if (P.hp <= 0) { P.hp = 0; endGame(survived); return; }
+    }
 
     // ---- 武器
     for (var i = 0; i < weapons.length; i++) fireWeapon(weapons[i], dt);
@@ -1417,8 +1464,14 @@
       var dx = P.x - e.x, dy = P.y - e.y;
       var d = Math.hypot(dx, dy) || 1;
       var nx = dx / d, ny = dy / d;
-      e.x += nx * e.speed * dt;
-      e.y += ny * e.speed * dt;
+      // 只对附近的敌人查询地形（200px 内），避免每帧为全场敌人做数千次采样
+      var emv = 1;
+      if (dx * dx + dy * dy < 40000) {
+        var et = TERRAIN_TRAITS[terrainAtFast(e.x, e.y)];
+        if (et && et.enemySpeed) emv = et.enemySpeed;
+      }
+      e.x += nx * e.speed * emv * dt;
+      e.y += ny * e.speed * emv * dt;
       e.wob += dt * 6;
       if (e.hitCd > 0) e.hitCd -= dt;
       if (e.flash > 0) e.flash -= dt;
@@ -1505,6 +1558,7 @@
   var CHUNK_TILES = 8;
   var CHUNK_PX = TILE * CHUNK_TILES;
   var chunkCache = new Map();
+  var chunkTerrain = new Map();   // 分块的地形类型网格，供玩法逻辑查询
 
   var T_COLOR = {
     deep: "#0f2138", water: "#1b3a5c", river: "#255d8c",
@@ -1672,6 +1726,17 @@
     return "snow";
   }
 
+  // 各地形的玩法特性：每一种都有取舍，不存在纯收益的地形
+  var TERRAIN_TRAITS = {
+    grass:  { name: "平原", desc: "" },
+    forest: { name: "森林", desc: "树木拖住敌人，你也跑不快", playerSpeed: 0.92, enemySpeed: 0.70 },
+    rock:   { name: "山地", desc: "居高临下，攻击范围 +30%", playerSpeed: 0.75, area: 1.30 },
+    sand:   { name: "沙滩", desc: "遍地是宝，拾取范围 +40%", playerSpeed: 0.90, pickup: 1.40 },
+    snow:   { name: "雪原", desc: "寒气逼人，攻击冷却 -12%", playerSpeed: 0.80, cd: 0.88 },
+    water:  { name: "浅水", desc: "涉水缓行，缓慢回复生命", playerSpeed: 0.60, regen: 1.2 },
+    deep:   { name: "深水", desc: "深水持续消耗生命，尽快上岸", playerSpeed: 0.45, drain: 2.5 }
+  };
+
   function drawTree(g, x, y, s) {
     g.fillStyle = "rgba(0,0,0,0.30)";
     g.beginPath(); g.ellipse(x, y + s * 0.55, s * 0.85, s * 0.3, 0, 0, 6.2832); g.fill();
@@ -1760,13 +1825,17 @@
     c.width = CHUNK_PX;
     c.height = CHUNK_PX;
     var g = c.getContext("2d");
+    var grid = new Array(CHUNK_TILES * CHUNK_TILES);
     for (var ty = 0; ty < CHUNK_TILES; ty++) {
       for (var tx = 0; tx < CHUNK_TILES; tx++) {
         var gtx = cx * CHUNK_TILES + tx;
         var gty = cy * CHUNK_TILES + ty;
-        paintTile(g, tx * TILE, ty * TILE, gtx, gty, terrainKind(gtx * TILE, gty * TILE));
+        var kind = terrainKind(gtx * TILE, gty * TILE);
+        grid[ty * CHUNK_TILES + tx] = kind;
+        paintTile(g, tx * TILE, ty * TILE, gtx, gty, kind);
       }
     }
+    chunkTerrain.set(cx + "|" + cy, grid);
     return c;
   }
 
@@ -1782,9 +1851,54 @@
         var n = it.next();
         if (n.done) break;
         chunkCache.delete(n.value);
+        chunkTerrain.delete(n.value);
       }
     }
     return c;
+  }
+
+  // 地形快速查询：优先读已生成分块的网格，未生成时才回退到实时计算
+  function terrainAtFast(wx, wy) {
+    var tx = Math.floor(wx / TILE), ty = Math.floor(wy / TILE);
+    var cx = Math.floor(tx / CHUNK_TILES), cy = Math.floor(ty / CHUNK_TILES);
+    var grid = chunkTerrain.get(cx + "|" + cy);
+    if (!grid) return terrainKind(wx, wy);
+    return grid[(ty - cy * CHUNK_TILES) * CHUNK_TILES + (tx - cx * CHUNK_TILES)];
+  }
+
+  // 玩家所在的地形会实时影响移动、攻击与拾取；每移动 20px 才重新采样一次
+  function updatePlayerTerrain() {
+    if (Math.abs(P.x - terrMemo.x) < 20 && Math.abs(P.y - terrMemo.y) < 20) return;
+    terrMemo.x = P.x;
+    terrMemo.y = P.y;
+    var k = terrainAtFast(P.x, P.y);
+    var t = TERRAIN_TRAITS[k] || {};
+    if (k !== curTerrain) {
+      curTerrain = k;
+      showTerrainTag(k);
+      elTerrain.textContent = (TERRAIN_TRAITS[k] || {}).name || "平原";
+    }
+    terrMul.speed = t.playerSpeed || 1;
+    terrMul.area = t.area || 1;
+    terrMul.cd = t.cd || 1;
+    terrMul.pickup = t.pickup || 1;
+  }
+
+  var terrainTagTimer = null;
+  function showTerrainTag(kind) {
+    var t = TERRAIN_TRAITS[kind];
+    if (!t || !t.desc) {
+      if (terrainTagTimer) { clearTimeout(terrainTagTimer); terrainTagTimer = null; }
+      terrainTag.hidden = true;
+      return;
+    }
+    terrainTag.textContent = t.name + " · " + t.desc;
+    terrainTag.hidden = false;
+    if (terrainTagTimer) clearTimeout(terrainTagTimer);
+    terrainTagTimer = setTimeout(function () {
+      terrainTag.hidden = true;
+      terrainTagTimer = null;
+    }, 2800);
   }
 
   function drawTerrain() {
@@ -2274,8 +2388,7 @@
   if (window.ResizeObserver) new ResizeObserver(resize).observe(arena);
 
   // 调试探针：仅用于自动化测试读数，不影响正常游玩
-  window.__DBG = function () {
-    return {
+  window.__DBG = function () {    return {
       state: state,
       auto: autoPlay,
       hero: currentHero ? currentHero.id : null,
@@ -2285,6 +2398,8 @@
       minimapReady: !!miniBase,
       bigmapReady: !!bigBase,
       mapOpen: state === "map",
+      terrain: curTerrain,
+      terrainMul: [terrMul.speed, terrMul.area, terrMul.cd, terrMul.pickup],
       time: Math.round(time * 10) / 10,
       enemies: enemies.length,
       bullets: bullets.length,
@@ -2296,6 +2411,16 @@
       canvas: W + "x" + H,
       weaponTimers: weapons.map(function (x) { return Math.round(x.timer * 100) / 100; })
     };
+  };
+
+  // 调试探针：把玩家直接放到指定经纬度，供自动化测试精确验证各地形效果
+  window.__GOTO = function (lon, lat) {
+    P.x = (lon - GEO_LON) * DEG;
+    P.y = (GEO_LAT - lat) * DEG;
+    terrMemo.x = -1e9;
+    terrMemo.y = -1e9;
+    camX = P.x;
+    camY = P.y;
   };
 
   best = readBest();
