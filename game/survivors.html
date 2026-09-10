@@ -276,7 +276,7 @@
   }
   .auto-badge {
     position: absolute;
-    right: 10px;
+    left: 10px;
     bottom: 10px;
     padding: 3px 10px;
     border: 1px solid var(--accent-dim);
@@ -288,6 +288,70 @@
     pointer-events: none;
   }
   .auto-badge[hidden] { display: none; }
+
+  /* 常驻小地图：随时知道自己在欧洲哪儿 */
+  .minimap {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    width: 150px;
+    height: 120px;
+    border: 1px solid var(--line-2);
+    border-radius: 7px;
+    background: #0d1b2c;
+    opacity: 0.92;
+    pointer-events: none;
+  }
+
+  .zoom-ctl {
+    position: absolute;
+    right: 10px;
+    bottom: 136px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 5px;
+    background: rgba(16, 18, 20, 0.72);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+  }
+  .zoom-btn {
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--line-2);
+    background: var(--panel);
+    color: var(--dim);
+    border-radius: 5px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .zoom-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .zoom-val {
+    min-width: 34px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  #bigmap {
+    width: min(86vw, 560px);
+    height: auto;
+    aspect-ratio: 45 / 36;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    background: #0d1b2c;
+  }
+
+  @media (max-width: 560px) {
+    .minimap { width: 108px; height: 86px; }
+    .zoom-ctl { bottom: 100px; }
+  }
 </style>
 </head>
 <body>
@@ -321,6 +385,12 @@
       <div class="barlabel" id="hpText">100 / 100</div>
       <div class="flash" id="flash"></div>
       <div class="auto-badge" id="autoBadge" hidden>自动托管中 · 按 T 接管</div>
+      <canvas class="minimap" id="mini" width="180" height="144" title="你在欧洲的位置"></canvas>
+      <div class="zoom-ctl">
+        <button class="zoom-btn" id="zoomOut" title="缩小画面（看得更远）">−</button>
+        <span class="zoom-val" id="zoomVal">1.0×</span>
+        <button class="zoom-btn" id="zoomIn" title="放大画面（看得更近）">+</button>
+      </div>
 
       <div class="picker" id="startScreen">
         <div class="picker-title">选择你的幸存者</div>
@@ -331,9 +401,10 @@
           <button class="btn" id="autoToggle">托管：关</button>
           <button class="btn btn-primary" id="startBtn">随机开一局</button>
         </div>
-        <div class="picker-sub" style="font-size:11px;max-width:540px">
-          WASD / ↑↓←→ 移动，手机按住屏幕拖动 · 武器全自动开火 · 游戏中按
-          <strong style="color:var(--accent)">T</strong> 随时切换托管
+        <div class="picker-sub" style="font-size:11px;max-width:560px">
+          WASD / ↑↓←→ 移动，手机按住屏幕拖动 · 武器全自动开火 ·
+          <strong style="color:var(--accent)">T</strong> 切换托管 ·
+          <strong style="color:var(--accent)">M</strong> 查看欧洲地图 · 滚轮缩放
         </div>
       </div>
 
@@ -352,12 +423,20 @@
           <button class="btn" id="changeHeroBtn">换个幸存者</button>
         </div>
       </div>
+
+      <div class="picker" id="mapScreen" hidden>
+        <div class="picker-title">欧洲地图</div>
+        <div class="picker-sub" id="mapHint">黄色圆点是你的位置，白框是当前视野 · 按 M 或点击空白处关闭</div>
+        <canvas id="bigmap" width="540" height="432"></canvas>
+      </div>
     </div>
   </div>
 
   <div class="hint">
     六种武器会自动索敌开火 · 击杀掉落经验宝石，升级三选一 · 武器练到 8 级且配套被动满级即可进化 ·
-    捡到烤鸡回血，精英怪掉宝箱 · 撑满 <strong style="color:var(--accent)">10 分钟</strong> 黎明降临即算生还，之后死神会来收人
+    捡到烤鸡回血，精英怪掉宝箱 · 撑满 <strong style="color:var(--accent)">10 分钟</strong> 黎明降临即算生还，之后死神会来收人<br>
+    右下角小地图随时显示你在欧洲的位置 · 按 <strong style="color:var(--accent)">M</strong> 查看全欧洲大地图 ·
+    滚轮或右下角按钮调节缩放（视野越远越容易躲避，但也越难看清细节）
   </div>
 </div>
 
@@ -447,6 +526,12 @@
   var heroCards = document.getElementById("heroCards");
   var autoBadge = document.getElementById("autoBadge");
   var autoToggle = document.getElementById("autoToggle");
+  var miniCv = document.getElementById("mini");
+  var miniCtx = miniCv.getContext("2d");
+  var bigCv = document.getElementById("bigmap");
+  var bigCtx = bigCv.getContext("2d");
+  var mapScreen = document.getElementById("mapScreen");
+  var zoomVal = document.getElementById("zoomVal");
   var levelScreen = document.getElementById("levelScreen");
   var levelTitle = document.getElementById("levelTitle");
   var levelCards = document.getElementById("levelCards");
@@ -473,6 +558,9 @@
   var heroCandidates = [];     // 本局待选的三名幸存者
   var selectedHero = null;     // 玩家选中的幸存者
   var currentHero = null;      // 本局实际使用的幸存者
+  var zoom = 1;                // 相机缩放：<1 视野更远，>1 视野更近
+  var miniBase = null;         // 小地图底图（预渲染一次）
+  var bigBase = null;          // 大地图底图
   var keys = {};
   var stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
 
@@ -696,6 +784,7 @@
       if (state === "playing" || state === "paused" || state === "levelup") setAuto(!autoPlay);
       return;
     }
+    if (e.key === "m" || e.key === "M") { toggleMap(); return; }
     if (state === "playing" || state === "paused") {
       if (e.key === "p" || e.key === "P" || e.key === "Escape") togglePause();
     }
@@ -757,7 +846,7 @@
 
   function spawnAt(tpl, hpMul, isElite) {
     var ang = Math.random() * Math.PI * 2;
-    var radius = Math.hypot(W, H) / 2 + 70;
+    var radius = Math.hypot(W / zoom, H / zoom) / 2 + 70;
     var e = {
       type: tpl.id,
       x: P.x + Math.cos(ang) * radius,
@@ -1013,7 +1102,7 @@
 
   function fireBolt(w, dmg, lv) {
     var count = 1 + Math.floor(lv / 2) + (w.evolved ? 3 : 0);
-    var halfW = W / 2 + 40, halfH = H / 2 + 40;
+    var halfW = W / (2 * zoom) + 40, halfH = H / (2 * zoom) + 40;
     for (var i = 0; i < count; i++) {
       var pool = [];
       for (var j = 0; j < enemies.length; j++) {
@@ -1700,23 +1789,118 @@
 
   function drawTerrain() {
     var halfW = W / 2, halfH = H / 2;
-    var cx0 = Math.floor((camX - halfW) / CHUNK_PX);
-    var cx1 = Math.floor((camX + halfW) / CHUNK_PX);
-    var cy0 = Math.floor((camY - halfH) / CHUNK_PX);
-    var cy1 = Math.floor((camY + halfH) / CHUNK_PX);
+    var viewW = halfW / zoom, viewH = halfH / zoom;
+    var cx0 = Math.floor((camX - viewW) / CHUNK_PX);
+    var cx1 = Math.floor((camX + viewW) / CHUNK_PX);
+    var cy0 = Math.floor((camY - viewH) / CHUNK_PX);
+    var cy1 = Math.floor((camY + viewH) / CHUNK_PX);
+    var size = (CHUNK_PX + 1) * zoom;
     for (var cy = cy0; cy <= cy1; cy++) {
       for (var cx = cx0; cx <= cx1; cx++) {
-        var px = Math.round(cx * CHUNK_PX - camX + halfW);
-        var py = Math.round(cy * CHUNK_PX - camY + halfH);
-        ctx.drawImage(getChunk(cx, cy), px, py, CHUNK_PX + 1, CHUNK_PX + 1);
+        var px = Math.round((cx * CHUNK_PX - camX) * zoom + halfW);
+        var py = Math.round((cy * CHUNK_PX - camY) * zoom + halfH);
+        ctx.drawImage(getChunk(cx, cy), px, py, size, size);
       }
+    }
+  }
+
+  /* ==================== 小地图 / 大地图 / 缩放 ==================== */
+
+  function setZoom(z) {
+    zoom = clamp(z, 0.7, 1.4);
+    zoomVal.textContent = zoom.toFixed(1) + "×";
+  }
+
+  function paintBase(w, h) {
+    var c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    var g = c.getContext("2d");
+    var rows = EURO_LAND.length, cols = EURO_COLS;
+    var cw = w / cols, ch = h / rows;
+    g.fillStyle = "#152840";
+    g.fillRect(0, 0, w, h);
+    for (var r = 0; r < rows; r++) {
+      for (var k = 0; k < cols; k++) {
+        if (EURO_LAND[r].charAt(k) !== "#") continue;
+        g.fillStyle = "#33402c";
+        g.fillRect(k * cw, r * ch, cw + 0.6, ch + 0.6);
+      }
+    }
+    return c;
+  }
+
+  function buildMapBases() {
+    var dpr = 2;
+    miniCv.width = 150 * dpr;
+    miniCv.height = 120 * dpr;
+    miniCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    miniBase = paintBase(150, 120);
+    bigBase = paintBase(540, 432);
+  }
+
+  // 世界坐标 → 地图画布坐标
+  function worldToMap(wx, wy, w, h) {
+    var lon = GEO_LON + wx / DEG;
+    var lat = GEO_LAT - wy / DEG;
+    return {
+      x: (lon - EURO_LON0) / (EURO_COLS - 1) * w,
+      y: (EURO_LAT0 - lat) / (EURO_LAND.length - 1) * h
+    };
+  }
+
+  function drawMapOverlay(g, base, w, h) {
+    g.clearRect(0, 0, w, h);
+    g.drawImage(base, 0, 0, w, h);
+
+    // 当前视野范围
+    var halfW = W / (2 * zoom), halfH = H / (2 * zoom);
+    var a = worldToMap(camX - halfW, camY - halfH, w, h);
+    var b = worldToMap(camX + halfW, camY + halfH, w, h);
+    g.strokeStyle = "rgba(255,255,255,0.55)";
+    g.lineWidth = 1;
+    g.strokeRect(a.x, a.y, Math.max(3, b.x - a.x), Math.max(3, b.y - a.y));
+
+    // 玩家位置：脉冲圆环 + 实心点
+    var p = worldToMap(camX, camY, w, h);
+    var t = (performance.now() % 1200) / 1200;
+    g.strokeStyle = "rgba(255,210,0," + ((1 - t) * 0.85).toFixed(2) + ")";
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.arc(p.x, p.y, 3 + t * 8, 0, 6.2832);
+    g.stroke();
+    g.fillStyle = "#ffd200";
+    g.beginPath();
+    g.arc(p.x, p.y, 3, 0, 6.2832);
+    g.fill();
+  }
+
+  function drawMinimap() {
+    if (!miniBase) return;
+    drawMapOverlay(miniCtx, miniBase, 150, 120);
+  }
+
+  function drawBigMap() {
+    if (!bigBase) return;
+    drawMapOverlay(bigCtx, bigBase, 540, 432);
+  }
+
+  function toggleMap() {
+    if (state === "map") {
+      mapScreen.hidden = true;
+      state = "playing";
+      last = 0;
+    } else if (state === "playing") {
+      state = "map";
+      mapScreen.hidden = false;
+      drawBigMap();
     }
   }
 
   /* ==================== 渲染 ==================== */
 
   function worldToScreen(x, y) {
-    return { x: x - camX + W / 2, y: y - camY + H / 2 };
+    return { x: (x - camX) * zoom + W / 2, y: (y - camY) * zoom + H / 2 };
   }
 
   function render() {
@@ -1729,8 +1913,9 @@
     // 地形地图：程序化生成 + 分块缓存，只绘制视野内的块
     drawTerrain();
 
-    var left = camX - W / 2 - 50, right = camX + W / 2 + 50;
-    var top = camY - H / 2 - 50, bottom = camY + H / 2 + 50;
+    var pad = 50 / zoom;
+    var left = camX - W / (2 * zoom) - pad, right = camX + W / (2 * zoom) + pad;
+    var top = camY - H / (2 * zoom) - pad, bottom = camY + H / (2 * zoom) + pad;
 
     // 拾取物
     for (var i = 0; i < gems.length; i++) {
@@ -2065,6 +2250,8 @@
     if (state === "playing") update(dt);
 
     render();
+    drawMinimap();
+    if (state === "map") drawBigMap();
   }
 
   /* ==================== 启动 ==================== */
@@ -2074,6 +2261,14 @@
   document.getElementById("changeHeroBtn").addEventListener("click", backToHeroSelect);
   document.getElementById("rerollBtn").addEventListener("click", rollHeroes);
   autoToggle.addEventListener("click", function () { setAuto(!autoPlay); });
+
+  document.getElementById("zoomIn").addEventListener("click", function () { setZoom(zoom + 0.1); });
+  document.getElementById("zoomOut").addEventListener("click", function () { setZoom(zoom - 0.1); });
+  mapScreen.addEventListener("click", function (e) { if (e.target === mapScreen) toggleMap(); });
+  cv.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    setZoom(zoom * (e.deltaY > 0 ? 0.92 : 1.08));
+  }, { passive: false });
 
   window.addEventListener("resize", resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(arena);
@@ -2086,6 +2281,10 @@
       hero: currentHero ? currentHero.id : null,
       heroWeapon: currentHero ? currentHero.weapon : null,
       terrainChunks: chunkCache.size,
+      zoom: Math.round(zoom * 100) / 100,
+      minimapReady: !!miniBase,
+      bigmapReady: !!bigBase,
+      mapOpen: state === "map",
       time: Math.round(time * 10) / 10,
       enemies: enemies.length,
       bullets: bullets.length,
@@ -2101,6 +2300,8 @@
 
   best = readBest();
   resize();
+  buildMapBases();
+  setZoom(1);
   rollHeroes();
   currentHero = heroCandidates[0];
   reset();
