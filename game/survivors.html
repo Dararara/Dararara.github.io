@@ -651,12 +651,13 @@
   }
 
   function dropLoot(e) {
+    if (gems.length >= MAX_GEMS) return;
     if (e.chest) {
       gems.push({ kind: "chest", x: e.x, y: e.y, r: 11, t: 0, vx: 0, vy: 0 });
       return;
     }
     gems.push({ kind: "xp", x: e.x, y: e.y, r: 5, value: e.xp, t: 0, vx: 0, vy: 0 });
-    if (Math.random() < 0.028) {
+    if (Math.random() < 0.028 && gems.length < MAX_GEMS) {
       gems.push({ kind: "chicken", x: e.x + 10, y: e.y + 6, r: 7, t: 0, vx: 0, vy: 0 });
     }
   }
@@ -831,36 +832,51 @@
 
   /* ==================== 拾取 ==================== */
 
+  function collect(g) {
+    if (g.kind === "xp") {
+      xp += g.value;
+      showFloat(g.x, g.y - 6, "+" + g.value, "#4fd1c5", 0.5, 10);
+      checkLevel();
+    } else if (g.kind === "chicken") {
+      P.hp = Math.min(P.maxHp, P.hp + 26);
+      showFloat(P.x, P.y - 22, "+26", "#4bbf73", 0.8, 13);
+    }
+  }
+
   function updateGems(dt) {
-    var pickR = 30 * S.pickup;
+    var magnetR = 46 * S.pickup;      // 进入这个范围就锁定吸附，速度拉满
+    var grabR = P.r + 7;
+    var pullBase = 96 * S.pickup;     // 磁铁被动同时提升整体回收速度
+
     for (var i = gems.length - 1; i >= 0; i--) {
       var g = gems[i];
       g.t += dt;
       var dx = P.x - g.x, dy = P.y - g.y;
-      var d = Math.hypot(dx, dy);
+      var d = Math.hypot(dx, dy) || 0.0001;
+      var nx = dx / d, ny = dy / d;
 
       if (g.kind === "chest") {
-        if (d < P.r + g.r + 4) { openChest(); gems.splice(i, 1); }
+        if (d < P.r + g.r + 8) { openChest(); gems.splice(i, 1); }
         continue;
       }
 
-      if (d < pickR) {
-        g.vx += (dx / (d || 1)) * 900 * dt;
-        g.vy += (dy / (d || 1)) * 900 * dt;
-      }
-      g.vx *= 0.9; g.vy *= 0.9;
-      g.x += g.vx * dt; g.y += g.vy * dt;
+      if (d < grabR + g.r) { collect(g); gems.splice(i, 1); continue; }
 
-      if (d < P.r + g.r + 2) {
-        if (g.kind === "xp") {
-          xp += g.value;
-          checkLevel();
-        } else if (g.kind === "chicken") {
-          P.hp = Math.min(P.maxHp, P.hp + 26);
-          showFloat(P.x, P.y - 22, "+26", "#4bbf73", 0.8, 13);
-        }
-        gems.splice(i, 1);
+      var sp;
+      if (d < magnetR) {
+        g.magnet = true;
+        g.boost = Math.min(820, (g.boost || 0) + 1800 * dt);
+        sp = 340 + g.boost;           // 340 → 1160
+      } else {
+        // 远处的宝石也持续回收，且距离越远追得越急：
+        // 保证无论玩家怎么跑（含满级翅膀提速），掉落物都不会被永久落在身后
+        sp = Math.min(360, pullBase + d * 0.8);
       }
+
+      // 单帧位移可能超过判定半径，先判断这一步是否跨过玩家，避免高速漏捡
+      if (sp * dt >= d) { collect(g); gems.splice(i, 1); continue; }
+      g.x += nx * sp * dt;
+      g.y += ny * sp * dt;
     }
   }
 
@@ -1170,11 +1186,12 @@
       var p = worldToScreen(g.x, g.y);
       var pulse = 0.75 + 0.25 * Math.sin(g.t * 7);
       if (g.kind === "xp") {
-        ctx.fillStyle = "#4fd1c5";
-        ctx.globalAlpha = pulse;
+        var gr = g.magnet ? g.r * 1.3 : g.r;
+        ctx.fillStyle = g.magnet ? "#8ef0e4" : "#4fd1c5";
+        ctx.globalAlpha = g.magnet ? 1 : pulse;
         ctx.beginPath();
-        ctx.moveTo(p.x, p.y - g.r); ctx.lineTo(p.x + g.r, p.y);
-        ctx.lineTo(p.x, p.y + g.r); ctx.lineTo(p.x - g.r, p.y);
+        ctx.moveTo(p.x, p.y - gr); ctx.lineTo(p.x + gr, p.y);
+        ctx.lineTo(p.x, p.y + gr); ctx.lineTo(p.x - gr, p.y);
         ctx.closePath(); ctx.fill();
         ctx.globalAlpha = 1;
       } else if (g.kind === "chicken") {
