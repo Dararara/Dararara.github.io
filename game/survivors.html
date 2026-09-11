@@ -309,6 +309,7 @@
     font-size: 12px;
     white-space: nowrap;
     pointer-events: none;
+    z-index: 6;              /* 速度切换等系统提示在开始界面也要看得见 */
   }
   .terrain-tag[hidden] { display: none; }
 
@@ -370,6 +371,7 @@
     position: absolute;
     right: 10px;
     bottom: 136px;
+    z-index: 5;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -402,6 +404,47 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .speed-ctl {
+    position: absolute;
+    right: 10px;
+    bottom: 170px;
+    z-index: 5;              /* 开始/结算界面也保持可见可用 */
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 5px;
+    background: rgba(16, 18, 20, 0.72);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+  }
+  .speed-label {
+    margin-right: 2px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--dim-2);
+  }
+  .speed-btn {
+    appearance: none;
+    min-width: 26px;
+    height: 22px;
+    padding: 0 4px;
+    border: 1px solid var(--line-2);
+    border-radius: 5px;
+    background: var(--panel);
+    color: var(--dim);
+    font-size: 11px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  .speed-btn:hover { color: var(--text); border-color: var(--dim-2); }
+  .speed-btn.is-active {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: #14160f;
+    font-weight: 600;
+  }
+
   #bigmap {
     width: min(86vw, 560px);
     height: auto;
@@ -414,6 +457,7 @@
   @media (max-width: 560px) {
     .minimap { width: 108px; height: 86px; }
     .zoom-ctl { bottom: 100px; }
+    .speed-ctl { bottom: 130px; }
   }
 </style>
 </head>
@@ -453,8 +497,15 @@
       <div class="flash" id="flash"></div>
       <div class="auto-badge" id="autoBadge" hidden>自动托管中 · 按 T 接管</div>
       <canvas class="minimap" id="mini" width="180" height="144" title="你在欧洲的位置"></canvas>
-      <div class="cam-badge" id="camBadge" hidden>上帝视角 · 自动托管中 · WASD 平移 · M 大地图 · 按 G 返回</div>
+      <div class="cam-badge" id="camBadge" hidden>上帝视角 · 自动托管中 · WASD 平移 · M 大地图 · F 加速 · 按 G 返回</div>
       <div class="build-hint" id="buildHint" hidden></div>
+      <div class="speed-ctl" id="speedCtl">
+        <span class="speed-label">速度</span>
+        <button class="speed-btn is-active" data-speed="1" title="正常速度">1×</button>
+        <button class="speed-btn" data-speed="2" title="两倍速">2×</button>
+        <button class="speed-btn" data-speed="3" title="三倍速">3×</button>
+        <button class="speed-btn" data-speed="5" title="五倍速">5×</button>
+      </div>
       <div class="zoom-ctl">
         <button class="zoom-btn" id="zoomOut" title="缩小画面（看得更远）">−</button>
         <span class="zoom-val" id="zoomVal">1.0×</span>
@@ -523,7 +574,10 @@
     建成全部 12 座触发最终入侵，撑住即胜 · 按 <strong style="color:var(--accent)">G</strong> 切换上帝视角看全欧洲
     （上帝视角下自动托管，升级不再弹窗打断）<br>
     各城市名会标在<b style="color:#ffd200">世界地图</b>与<b style="color:#ffd200">按 M 打开的大地图</b>上，
-    小地图底部提示离你最近的一座
+    小地图底部提示离你最近的一座<br>
+    按 <strong style="color:var(--accent)">F</strong> 或右下角按钮切换
+    <strong style="color:var(--accent)">1× / 2× / 3× / 5×</strong> 游戏速度 —— 刷怪、武器冷却、
+    波次推进全部同步加速，适合托管挂机快速推进防线
   </div>
 </div>
 
@@ -1192,6 +1246,7 @@
     if (e.key === "m" || e.key === "M") { toggleMap(); return; }
     if (e.key === "b" || e.key === "B") { tryInteractFort(); return; }
     if (e.key === "g" || e.key === "G") { toggleCamMode(); return; }
+    if (e.key === "f" || e.key === "F") { cycleSpeed(); return; }
     if (state === "playing" || state === "paused") {
       if (e.key === "p" || e.key === "P" || e.key === "Escape") togglePause();
     }
@@ -2449,6 +2504,35 @@
     zoomVal.textContent = zoom.toFixed(1) + "×";
   }
 
+  /* ==================== 游戏速度（时间倍速） ==================== */
+
+  var SPEED_STEPS = [1, 2, 3, 5];
+  var speedMul = 1;
+  var speedButtons = document.querySelectorAll(".speed-ctl .speed-btn");
+
+  function setSpeed(m, persist) {
+    speedMul = SPEED_STEPS.indexOf(m) >= 0 ? m : 1;
+    Array.prototype.forEach.call(speedButtons, function (b) {
+      b.classList.toggle("is-active", parseInt(b.getAttribute("data-speed"), 10) === speedMul);
+    });
+    if (persist !== false) {
+      try { localStorage.setItem("game.survivors.speed", String(speedMul)); } catch (e) {}
+    }
+  }
+
+  function readSpeed() {
+    try {
+      var v = parseInt(localStorage.getItem("game.survivors.speed") || "1", 10);
+      return SPEED_STEPS.indexOf(v) >= 0 ? v : 1;
+    } catch (e) { return 1; }
+  }
+
+  function cycleSpeed() {
+    var i = SPEED_STEPS.indexOf(speedMul);
+    setSpeed(SPEED_STEPS[(i + 1) % SPEED_STEPS.length]);
+    notify("游戏速度 " + speedMul + "×" + (speedMul > 1 ? " · 刷怪与波次同步加速" : " · 已恢复正常速度"));
+  }
+
   function paintBase(w, h) {
     var c = document.createElement("canvas");
     c.width = w;
@@ -2959,7 +3043,15 @@
     var dt = last ? Math.min((t - last) / 1000, 0.05) : 0;
     last = t;
 
-    if (state === "playing") update(dt);
+    // 时间倍速：把一帧切成若干个子步长依次推进，而不是把 dt 直接放大。
+    // 放大 dt 会让技能判定与碰撞跳步（子弹穿过敌人、掉血判定被跳过），
+    // 逐个跑小步长则与正常速度下完全一致，只是推进得更快。
+    if (state === "playing") {
+      for (var step = 0; step < speedMul; step++) {
+        if (state !== "playing") break;   // 中途弹出选卡/结算就停手，不越过暂停点
+        update(dt);
+      }
+    }
 
     render();
     drawMinimap();
@@ -2973,6 +3065,11 @@
   document.getElementById("changeHeroBtn").addEventListener("click", backToHeroSelect);
   document.getElementById("rerollBtn").addEventListener("click", rollHeroes);
   autoToggle.addEventListener("click", function () { setAuto(!autoPlay); });
+
+  Array.prototype.forEach.call(speedButtons, function (b) {
+    b.addEventListener("click", function () { setSpeed(parseInt(b.getAttribute("data-speed"), 10)); });
+  });
+  setSpeed(readSpeed(), false);   // 沿用上次选择的速度
 
   Array.prototype.forEach.call(document.querySelectorAll(".mode-row .btn"), function (b) {
     b.addEventListener("click", function () {
@@ -3006,6 +3103,8 @@
       heroWeapon: currentHero ? currentHero.weapon : null,
       terrainChunks: chunkCache.size,
       zoom: Math.round(zoom * 100) / 100,
+      speed: speedMul,
+      speedSteps: SPEED_STEPS.slice(),
       minimapReady: !!miniBase,
       bigmapReady: !!bigBase,
       mapOpen: state === "map",
