@@ -112,6 +112,27 @@
   .chip.is-evo b { color: var(--accent); }
   .chip.is-passive { opacity: 0.82; }
 
+  /* 已建成城市带来的永久增益 */
+  .city-buffs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: -8px;
+    margin-bottom: 14px;
+  }
+  .city-buffs[hidden] { display: none; }
+  .chip.is-city {
+    border-color: rgba(255, 210, 0, 0.42);
+    background: rgba(255, 210, 0, 0.07);
+    color: #d8c47a;
+  }
+  .chip.is-city b { color: var(--accent); font-weight: 600; }
+  .chip.is-city-count {
+    border-style: dashed;
+    background: none;
+    color: var(--dim-2);
+  }
+
   /* 卡片式选择界面 */
   .picker {
     position: absolute;
@@ -482,6 +503,7 @@
   </div>
 
   <div class="loadout" id="loadout"></div>
+  <div class="city-buffs" id="cityBuffs" hidden></div>
 
   <div class="stage" style="padding:0;background:transparent;border:none">
     <div class="arena" id="arena">
@@ -570,7 +592,11 @@
     按 <strong style="color:var(--accent)">T</strong> 托管后每个角色打法都不同：修女钻树林打游击、
     术士抢占高地、刀客在开阔地放风筝、厨子贴脸缠斗、雷使边打边泡浅水回血<br>
     <strong style="color:var(--accent)">防线模式</strong>：走到城市废墟按 <strong style="color:var(--accent)">B</strong> 建要塞，
-    击杀掉落建材、靠近再按 B 修缮 · 要塞会开火并压制范围内敌人，耐久归零就失守 ·
+    击杀掉落建材、靠近再按 B 修缮 ·
+    <b style="color:#ffd200">每建成一座城都给主角一份永久增益</b>（君士坦丁堡 伤害 +10%、罗马 生命 +30、
+    柏林 经验 +15% …，已获得的写在下方装备栏里）·
+    站在自家要塞 240px 内伤害 +25% 且持续回血，要塞自行炮击并让范围内敌人减速 ·
+    耐久归零会失守、该城增益一并失去 ·
     建成全部 12 座触发最终入侵，撑住即胜 · 按 <strong style="color:var(--accent)">G</strong> 切换上帝视角看全欧洲
     （上帝视角下自动托管，升级不再弹窗打断）<br>
     各城市（废墟）在两种模式下都会标名：<b style="color:#ffd200">世界地图</b>、
@@ -649,20 +675,22 @@
                   desc: "边打边泡浅水，靠回血续航" }
   };
 
-  // 防线模式的据点：按真实经纬度放置的欧洲城市废墟
+  // 防线模式的据点：按真实经纬度放置的欧洲城市废墟。
+  // 每座城建成后给主角一份**永久增益**——这是「把欧洲连成防线」的核心回报，
+  // 否则玩家没有理由跑遍全图，城市也只是一块减速地毯。
   var CITIES = [
-    { name: "君士坦丁堡", lon: 29.00, lat: 41.00 },
-    { name: "雅典",       lon: 23.70, lat: 38.00 },
-    { name: "罗马",       lon: 12.50, lat: 41.90 },
-    { name: "维也纳",     lon: 16.40, lat: 48.20 },
-    { name: "华沙",       lon: 21.00, lat: 52.20 },
-    { name: "基辅",       lon: 30.50, lat: 50.50 },
-    { name: "柏林",       lon: 13.40, lat: 52.50 },
-    { name: "巴黎",       lon: 2.35,  lat: 48.90 },
-    { name: "马德里",     lon: -3.70, lat: 40.40 },
-    { name: "伦敦",       lon: -0.13, lat: 51.50 },
-    { name: "斯德哥尔摩", lon: 18.10, lat: 59.30 },
-    { name: "莫斯科",     lon: 37.60, lat: 55.75 }
+    { name: "君士坦丁堡", lon: 29.00, lat: 41.00, bonus: { dmg: 0.10 },    bonusText: "伤害 +10%" },
+    { name: "雅典",       lon: 23.70, lat: 38.00, bonus: { cd: -0.08 },    bonusText: "攻击冷却 -8%" },
+    { name: "罗马",       lon: 12.50, lat: 41.90, bonus: { maxHp: 30 },    bonusText: "最大生命 +30" },
+    { name: "维也纳",     lon: 16.40, lat: 48.20, bonus: { area: 0.10 },   bonusText: "攻击范围 +10%" },
+    { name: "华沙",       lon: 21.00, lat: 52.20, bonus: { speed: 0.06 },  bonusText: "移动速度 +6%" },
+    { name: "基辅",       lon: 30.50, lat: 50.50, bonus: { pickup: 0.30 }, bonusText: "拾取范围 +30%" },
+    { name: "柏林",       lon: 13.40, lat: 52.50, bonus: { xpGain: 0.15 }, bonusText: "经验获取 +15%" },
+    { name: "巴黎",       lon: 2.35,  lat: 48.90, bonus: { hpRegen: 0.6 }, bonusText: "生命恢复 +0.6/秒" },
+    { name: "马德里",     lon: -3.70, lat: 40.40, bonus: { dmg: 0.08 },    bonusText: "伤害 +8%" },
+    { name: "伦敦",       lon: -0.13, lat: 51.50, bonus: { cd: -0.06 },    bonusText: "攻击冷却 -6%" },
+    { name: "斯德哥尔摩", lon: 18.10, lat: 59.30, bonus: { maxHp: 20 },    bonusText: "最大生命 +20" },
+    { name: "莫斯科",     lon: 37.60, lat: 55.75, bonus: { area: 0.08 },   bonusText: "攻击范围 +8%" }
   ];
 
   var FORT_RANGE = 240;        // 要塞生效半径
@@ -671,7 +699,9 @@
   var FORT_REPAIR_HP = 180;    // 每次修缮回复的耐久
   var FORT_MAX_HP = 620;       // 要塞耐久上限
   var FORT_SHOT_CD = 1.1;      // 炮击间隔
-  var FORT_SHOT_DMG = 26;      // 单发炮击伤害
+  var FORT_SHOT_DMG = 26;      // 单发炮击伤害（随波次增强）
+  var FORT_SHELTER_DMG = 0.25; // 站在自家要塞范围内：伤害 +25%
+  var FORT_SHELTER_REGEN = 1.5;// 站在自家要塞范围内：每秒回血
   var FORT_WAVE_INTERVAL = 40; // 防线模式：每波之间的间隔（秒）
   var FORT_FINAL_TIME = 150;   // 最终守护战需要撑住的秒数
 
@@ -704,6 +734,7 @@
   var elKills = document.getElementById("hKills");
   var elBest = document.getElementById("hBest");
   var elLoadout = document.getElementById("loadout");
+  var cityBuffsEl = document.getElementById("cityBuffs");
   var hpFill = document.getElementById("hpFill");
   var xpFill = document.getElementById("xpFill");
   var hpText = document.getElementById("hpText");
@@ -745,10 +776,12 @@
   var camX, camY, shakeT, damageT;
   var best = 0;
   var S;                       // 被动加成缓存
+  var shelterDmg = 1;          // 站在自家要塞范围内的伤害加成
   var heroBonus = null;        // 当前幸存者的属性特性
   var autoPlay = false;        // 自动托管开关
   var aiDir = { x: 0, y: 0 };  // AI 当前移动方向
   var aiTimer = 0;             // AI 决策节流
+  var aiFortGoal = null;       // AI 当前要去的据点（供测试核对「AI 是否在管城市」）
   var autoPickTimer = null;    // 自动选卡定时器
   var heroCandidates = [];     // 本局待选的三名幸存者
   var selectedHero = null;     // 玩家选中的幸存者
@@ -800,6 +833,16 @@
 
   /* ==================== 被动加成 ==================== */
 
+  // 已建成城市的增益合计（按 key 累加）
+  function cityBonusSum(key) {
+    var v = 0;
+    for (var i = 0; i < forts.length; i++) {
+      var f = forts[i];
+      if (f.built && f.bonus && f.bonus[key]) v += f.bonus[key];
+    }
+    return v;
+  }
+
   function recalcStats() {
     var s = { dmg: 1, area: 1, cd: 1, speed: 1, pickup: 1, maxHp: 100 };
     if (heroBonus) {
@@ -818,6 +861,16 @@
       else if (p.id === "magnet") s.pickup *= 1 + 0.32 * lv;
       else if (p.id === "tome") s.cd *= Math.pow(0.92, lv);
     }
+    // 已建成城市的永久增益：建得越多，主角越强（跨城市累积）
+    s.dmg *= 1 + cityBonusSum("dmg");
+    s.area *= 1 + cityBonusSum("area");
+    s.speed *= 1 + cityBonusSum("speed");
+    s.pickup *= 1 + cityBonusSum("pickup");
+    s.cd *= 1 + cityBonusSum("cd");
+    s.maxHp += cityBonusSum("maxHp");
+    s.xpGain = 1 + cityBonusSum("xpGain");
+    s.regen = cityBonusSum("hpRegen");
+
     var prevMax = S ? S.maxHp : 100;
     S = s;
     if (P && P.maxHp !== undefined && s.maxHp !== prevMax) {
@@ -842,7 +895,7 @@
     var def = WEAPONS[w.base];
     var mul = 1 + 0.18 * (w.level - 1);
     if (w.evolved) mul *= 1.85;
-    return def.dmg * mul * S.dmg;
+    return def.dmg * mul * S.dmg * shelterDmg;
   }
 
   /* ==================== 初始化 ==================== */
@@ -866,6 +919,8 @@
     terrMemo.x = -1e9; terrMemo.y = -1e9;
     buildForts();
     materials = 0;
+    shelterDmg = 1;
+    renderCityBuffs();
     wave = 0;
     waveTimer = FORT_WAVE_INTERVAL;
     finalStand = false;
@@ -946,18 +1001,25 @@
       g = gems[i];
       if (dist2(P.x, P.y, g.x, g.y) < scan2) loot.push(g);
     }
-    // 防线模式：先决定当前最该前往的据点（够建材才去建、受损才去修）
-    var fortGoal = null, fortGoalD = Infinity;
+    // 防线模式：决定当前最该前往的据点——建材够就去建，被打坏就去修。
+    // 不再限制搜索半径：地图上万像素宽，只认 1500px 以内等于「AI 永远不去建城」。
+    var fortGoal = null, fortGoalScore = Infinity;
     if (gameMode === "fortress") {
+      var canBuild = materials >= FORT_BUILD_COST, canFix = materials >= FORT_REPAIR_COST;
       for (i = 0; i < forts.length; i++) {
         var ff = forts[i];
         var fd = Math.hypot(ff.x - P.x, ff.y - P.y);
-        if (fd > 1500) continue;
-        var want = (!ff.built && materials >= FORT_BUILD_COST) ||
-                   (ff.built && ff.hp < FORT_MAX_HP * 0.6 && materials >= FORT_REPAIR_COST);
-        if (want && fd < fortGoalD) { fortGoalD = fd; fortGoal = ff; }
+        var sc = Infinity;
+        if (ff.built) {
+          // 修缮优先：越破越靠前（失守会丢掉这座城的永久增益）
+          if (ff.hp < FORT_MAX_HP * 0.75 && canFix) sc = fd * (0.3 + ff.hp / FORT_MAX_HP);
+        } else if (canBuild) {
+          sc = fd + 240;    // 建造略让位于修缮
+        }
+        if (sc < fortGoalScore) { fortGoalScore = sc; fortGoal = ff; }
       }
     }
+    aiFortGoal = fortGoal;      // 供自动化测试核对 AI 是否真的在管城市
 
     if (!threat.length && !loot.length && !fortGoal) return;   // 四周无事，保持当前方向
 
@@ -1019,7 +1081,9 @@
       if (fortGoal) {
         var fgx = fortGoal.x - P.x, fgy = fortGoal.y - P.y;
         var fgd = Math.hypot(fgx, fgy) || 1;
-        lure += ((fgx * dx + fgy * dy) / fgd) * 3.2;
+        // 远处的城也要去，但权重随距离缓降，免得为了边角城市横穿整个战场
+        var fortBias = 3.4 * clamp(1.5 - fgd / 4000, 0.7, 1.5);
+        lure += ((fgx * dx + fgy * dy) / fgd) * fortBias;
       }
 
       var score = lure - danger * 1.7 + Math.random() * 0.05;
@@ -1046,6 +1110,8 @@
         lat: c.lat,
         x: (c.lon - GEO_LON) * DEG,
         y: (GEO_LAT - c.lat) * DEG,
+        bonus: c.bonus,
+        bonusText: c.bonusText,
         built: false, hp: 0, cool: 0, flash: 0
       });
     }
@@ -1083,7 +1149,11 @@
       f.hp = FORT_MAX_HP;
       f.flash = 0.7;
       showFloat(f.x, f.y - 36, f.name + " 要塞落成", "#ffd200", 2.2, 16);
+      if (f.bonusText) showFloat(f.x, f.y - 60, "获得 " + f.bonusText, "#4bbf73", 3.0, 14);
       addFx({ kind: "ring", x: f.x, y: f.y, r: FORT_RANGE, life: 0.9, max: 0.9, color: "#ffd200" });
+      recalcStats();
+      renderLoadout();
+      renderCityBuffs();
       if (builtFortCount() >= forts.length) onAllFortsBuilt();
       return;
     }
@@ -1121,7 +1191,7 @@
         if (target) {
           addFx({
             kind: "bolt", x: target.x, y: target.y, life: 0.2, max: 0.2,
-            color: "#ffd200", dmg: FORT_SHOT_DMG, done: false
+            color: "#ffd200", dmg: FORT_SHOT_DMG + wave * 6, done: false
           });
         }
       }
@@ -1132,6 +1202,10 @@
         f.hp = 0;
         addFx({ kind: "ring", x: f.x, y: f.y, r: FORT_RANGE, life: 0.7, max: 0.7, color: "#e5534b" });
         showFloat(f.x, f.y - 34, f.name + " 失守", "#e5534b", 2.4, 16);
+        if (f.bonusText) showFloat(f.x, f.y - 58, "失去 " + f.bonusText, "#e5534b", 2.8, 13);
+        recalcStats();
+        renderLoadout();
+        renderCityBuffs();
       }
     }
   }
@@ -1645,7 +1719,7 @@
 
   function collect(g) {
     if (g.kind === "xp") {
-      xp += g.value;
+      xp += g.value * (S.xpGain || 1);   // 柏林的城市增益：经验获取 +15%
       showFloat(g.x, g.y - 6, "+" + g.value, "#4fd1c5", 0.5, 10);
       checkLevel();
     } else if (g.kind === "mat") {
@@ -1916,7 +1990,7 @@
         var nf = nearestFort(P.x, P.y, 105);
         if (nf) {
           if (!nf.built && materials >= FORT_BUILD_COST) tryInteractFort();
-          else if (nf.built && nf.hp < FORT_MAX_HP * 0.8 && materials >= FORT_REPAIR_COST) tryInteractFort();
+          else if (nf.built && nf.hp < FORT_MAX_HP * 0.75 && materials >= FORT_REPAIR_COST) tryInteractFort();
         }
       }
     }
@@ -1944,6 +2018,15 @@
     // ---- 地形对生命的持续影响：浅水回血、深水掉血
     var tTrait = TERRAIN_TRAITS[curTerrain] || {};
     if (tTrait.regen) P.hp = Math.min(P.maxHp, P.hp + tTrait.regen * dt);
+
+    // ---- 要塞庇护：站在自家要塞范围内伤害提升并持续回血，
+    //      这是城市对玩法的直接价值（不只是给敌人减速）
+    var shel = gameMode === "fortress" ? fortShelter(P.x, P.y) : null;
+    shelterDmg = shel ? 1 + FORT_SHELTER_DMG : 1;
+    if (shel) P.hp = Math.min(P.maxHp, P.hp + FORT_SHELTER_REGEN * dt);
+
+    // ---- 城市增益带来的全局回血（巴黎）
+    if (S.regen) P.hp = Math.min(P.maxHp, P.hp + S.regen * dt);
     if (tTrait.drain) {
       P.hp -= tTrait.drain * dt;
       if (P.hp <= 0) { P.hp = 0; endGame(survived); return; }
@@ -3032,6 +3115,23 @@
 
   /* ==================== HUD ==================== */
 
+  // 已建成城市带来的永久增益（让玩家一眼看到「建城到底换来了什么」）
+  function renderCityBuffs() {
+    if (!cityBuffsEl) return;
+    var built = 0, parts = [];
+    for (var i = 0; i < forts.length; i++) {
+      var f = forts[i];
+      if (!f.built) continue;
+      built++;
+      parts.push('<span class="chip is-city"><b>' + f.name + "</b>" + (f.bonusText || "") + "</span>");
+    }
+    if (!built) { cityBuffsEl.hidden = true; cityBuffsEl.innerHTML = ""; return; }
+    cityBuffsEl.innerHTML =
+      '<span class="chip is-city-count">城市增益 ' + built + "/" + forts.length + "</span>" +
+      parts.join("");
+    cityBuffsEl.hidden = false;
+  }
+
   function syncHud() {
     if (gameMode === "fortress" && finalStand) {
       elTime.textContent = fmtTime(Math.max(0, finalTimer));
@@ -3068,6 +3168,7 @@
         PASSIVES[p.id].name + " " + p.level + "/" + PASSIVES[p.id].max + "</span>");
     }
     elLoadout.innerHTML = parts.join("");
+    renderCityBuffs();
   }
 
   function updateBest() {
@@ -3274,6 +3375,28 @@
       materials: materials,
       forts: builtFortCount(),
       fortsTotal: forts.length,
+      cityBonus: {
+        dmg: Math.round(cityBonusSum("dmg") * 100) / 100,
+        maxHp: cityBonusSum("maxHp"),
+        cd: Math.round(cityBonusSum("cd") * 100) / 100,
+        area: Math.round(cityBonusSum("area") * 100) / 100,
+        speed: Math.round(cityBonusSum("speed") * 100) / 100,
+        pickup: Math.round(cityBonusSum("pickup") * 100) / 100,
+        xpGain: Math.round(cityBonusSum("xpGain") * 100) / 100,
+        hpRegen: cityBonusSum("hpRegen")
+      },
+      stats: S ? {
+        dmg: Math.round(S.dmg * 1000) / 1000,
+        cd: Math.round(S.cd * 1000) / 1000,
+        maxHp: S.maxHp,
+        speed: Math.round(S.speed * 1000) / 1000,
+        xpGain: Math.round((S.xpGain || 1) * 1000) / 1000,
+        regen: S.regen || 0
+      } : null,
+      shelterDmg: shelterDmg,
+      aiGoal: aiFortGoal ? aiFortGoal.name : null,
+      aiGoalDist: aiFortGoal ? Math.round(Math.hypot(aiFortGoal.x - P.x, aiFortGoal.y - P.y)) : null,
+      aiDir: [Math.round(aiDir.x * 100) / 100, Math.round(aiDir.y * 100) / 100],
       fortHp: forts.filter(function (f) { return f.built; }).map(function (f) { return Math.round(f.hp); }),
       wave: wave,
       finalStand: finalStand,
@@ -3317,6 +3440,14 @@
     checkLevel();
     syncHud();
     return { xp: xp, level: level, pending: pendingLevels };
+  };
+
+  // 调试探针：直接对指定城市造成伤害，便于自动化测试验证「失守会丢掉城市增益」
+  window.__FORT_DAMAGE = function (name, dmg) {
+    for (var i = 0; i < forts.length; i++) {
+      if (forts[i].name === name) { forts[i].hp -= dmg; return Math.round(forts[i].hp); }
+    }
+    return null;
   };
 
   // 调试探针：清空场上敌人，便于自动化测试观察「新敌人在哪刷新」
