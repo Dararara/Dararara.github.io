@@ -573,8 +573,11 @@
     击杀掉落建材、靠近再按 B 修缮 · 要塞会开火并压制范围内敌人，耐久归零就失守 ·
     建成全部 12 座触发最终入侵，撑住即胜 · 按 <strong style="color:var(--accent)">G</strong> 切换上帝视角看全欧洲
     （上帝视角下自动托管，升级不再弹窗打断）<br>
-    各城市名会标在<b style="color:#ffd200">世界地图</b>与<b style="color:#ffd200">按 M 打开的大地图</b>上，
-    小地图底部提示离你最近的一座<br>
+    各城市（废墟）在两种模式下都会标名：<b style="color:#ffd200">世界地图</b>、
+    <b style="color:#ffd200">按 M 的大地图</b>上全标，小地图提示最近一座并画出方位，
+    城市在视野外时屏幕边缘会有<b style="color:#ffd200">箭头 + 距离</b>指路<br>
+    按 <strong style="color:var(--accent)">G</strong> 进上帝视角会直接切到<b style="color:#ffd200">全局视野</b>
+    （能看见大半个欧洲，滚轮可继续拉远到 0.07× 看全图）<br>
     按 <strong style="color:var(--accent)">F</strong> 或右下角按钮切换
     <strong style="color:var(--accent)">1× / 2× / 3× / 5×</strong> 游戏速度 —— 刷怪、武器冷却、
     波次推进全部同步加速，适合托管挂机快速推进防线
@@ -760,6 +763,7 @@
   var camMode = "follow";      // follow 跟随主角 | god 上帝视角
   var godX = 0, godY = 0;      // 上帝视角的相机坐标
   var autoBeforeGod = false;   // 进上帝视角前的托管状态
+  var zoomBeforeGod = 1;       // 进上帝视角前的视野倍率
   var forts = [];              // 防线模式的据点列表
   var materials = 0;           // 建材：建造与修缮要塞的消耗
   var wave = 0;                // 当前波次
@@ -870,6 +874,7 @@
     autoFortTimer = 0;
     camMode = "follow";
     godX = 0; godY = 0;
+    setZoom(1);              // 新一局从正常视野开始（上一局可能停在全局视野）
     updateCamBadge();
     if (buildHint) buildHint.hidden = true;
     if (terrainTagTimer) { clearTimeout(terrainTagTimer); terrainTagTimer = null; }
@@ -1209,12 +1214,16 @@
       godX = camX;
       godY = camY;
       autoBeforeGod = autoPlay;
-      setAuto(true);   // 看全局时角色必须交给 AI，否则会站着挨打
-      notify("上帝视角 · 自动托管已开启（WASD 平移 · 滚轮缩放 · M 大地图 · G 返回）");
+      zoomBeforeGod = zoom;
+      setAuto(true);              // 看全局时角色必须交给 AI，否则会站着挨打
+      setZoom(GOD_ZOOM);          // 自动给一个全局视野，否则「上帝视角」还是巴掌大一块
+      getStratBase();             // 预热战略底图，避免第一次拉远时卡一下
+      notify("上帝视角 · 全局视野（滚轮缩放 · WASD 平移 · M 大地图 · G 返回）");
     } else {
       camMode = "follow";
+      setZoom(zoomBeforeGod);     // 恢复进入前的视野倍率
       if (!autoBeforeGod) setAuto(false);
-      setAuto(autoPlay);   // 刷新标识文案与按钮状态
+      setAuto(autoPlay);          // 刷新标识文案与按钮状态
       notify("跟随视角" + (autoPlay ? " · 自动托管中" : ""));
     }
     updateCamBadge();
@@ -1306,10 +1315,18 @@
     return pool[Math.floor(Math.random() * pool.length)] || ENEMY_TYPES[0];
   }
 
+  // 战场有效半径：跟随视野变化，但最多放大到基准的 2 倍。
+  // 上帝视角可以拉到 0.07×，若照搬视野尺寸，敌人会在上万像素外刷新、
+  // 闪电也会隔屏点名——那就等于把战斗判定一起放大了，玩法被改变。
+  function combatRange() {
+    var base = Math.hypot(W, H) / 2;
+    return Math.max(base, Math.min(Math.hypot(W / zoom, H / zoom) / 2, base * 2));
+  }
+
   function spawnAt(tpl, hpMul, isElite) {
     // 防线模式的入侵从东侧压来，生存模式则四面合围
     var ang = gameMode === "fortress" ? rand(-0.95, 0.95) : Math.random() * Math.PI * 2;
-    var radius = Math.hypot(W / zoom, H / zoom) / 2 + 70;
+    var radius = combatRange() + 70;
     var e = {
       type: tpl.id,
       x: P.x + Math.cos(ang) * radius,
@@ -1373,7 +1390,7 @@
   function spawnReaper() {
     reaperSpawned = true;
     var ang = Math.random() * Math.PI * 2;
-    var radius = Math.hypot(W, H) / 2 + 80;
+    var radius = combatRange() + 80;
     var d = difficulty();
     enemies.push({
       type: "reaper", x: P.x + Math.cos(ang) * radius, y: P.y + Math.sin(ang) * radius,
@@ -1584,7 +1601,8 @@
 
   function fireBolt(w, dmg, lv) {
     var count = 1 + Math.floor(lv / 2) + (w.evolved ? 3 : 0);
-    var halfW = W / (2 * zoom) + 40, halfH = H / (2 * zoom) + 40;
+    var lim = combatRange() + 40;
+    var halfW = Math.min(W / (2 * zoom) + 40, lim), halfH = Math.min(H / (2 * zoom) + 40, lim);
     for (var i = 0; i < count; i++) {
       var pool = [];
       for (var j = 0; j < enemies.length; j++) {
@@ -2409,7 +2427,48 @@
     notify(t.name + " · " + t.desc);
   }
 
+  // 全局战略底图：低倍率下用它替代逐格地形绘制。
+  // 视野覆盖上万像素时，分块方案每帧要贴上千块（还会不断生成新分块），帧率会被直接拖死。
+  var stratBase = null;
+  function mapWorldRect() {
+    return {
+      x: (EURO_LON0 - GEO_LON) * DEG,
+      y: (GEO_LAT - EURO_LAT0) * DEG,
+      w: EURO_COLS * DEG,
+      h: EURO_LAND.length * DEG
+    };
+  }
+
+  function getStratBase() {
+    if (stratBase) return stratBase;
+    var w = 300, h = 240;
+    var c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    var g = c.getContext("2d");
+    var r = mapWorldRect();
+    g.fillStyle = "#0b1420";
+    g.fillRect(0, 0, w, h);
+    var sx = r.w / w, sy = r.h / h;
+    for (var j = 0; j < h; j++) {
+      for (var i = 0; i < w; i++) {
+        g.fillStyle = T_COLOR[terrainKind(r.x + (i + 0.5) * sx, r.y + (j + 0.5) * sy)] || "#2b3720";
+        g.fillRect(i, j, 1, 1);
+      }
+    }
+    stratBase = c;
+    return c;
+  }
+
+  function drawStrategicMap() {
+    var r = mapWorldRect();
+    ctx.fillStyle = "#0b1420";
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+    var s = worldToScreen(r.x, r.y);
+    ctx.drawImage(getStratBase(), s.x, s.y, r.w * zoom, r.h * zoom);
+  }
+
   function drawTerrain() {
+    if (zoom < 0.3) { drawStrategicMap(); return; }   // 拉到全局视野时切战略底图
     var halfW = W / 2, halfH = H / 2;
     var viewW = halfW / zoom, viewH = halfH / zoom;
     var cx0 = Math.floor((camX - viewW) / CHUNK_PX);
@@ -2428,7 +2487,7 @@
 
   // 防线模式的据点：废墟 / 要塞 / 庇护范围
   function drawForts() {
-    if (gameMode !== "fortress") return;
+    if (!forts.length) return;   // 两种模式都画出城市：它们也是全图最重要的地标
     for (var i = 0; i < forts.length; i++) {
       var f = forts[i];
       var p = worldToScreen(f.x, f.y);
@@ -2473,8 +2532,17 @@
 
   // 城市名：跟随视角标注身边这座，上帝视角标出全部据点与耐久，便于规划防线
   var LABEL_FONT = "system-ui, -apple-system, \"PingFang SC\", \"Microsoft YaHei\", sans-serif";
+
+  // 像素距离 → 公里（1 度经纬 = DEG 像素，欧洲中纬度 1 度 ≈ 68 公里）
+  function fmtKm(px) {
+    var km = px / DEG * 68;
+    if (km < 1) return Math.round(km * 1000) + " m";
+    if (km < 10) return km.toFixed(1) + " km";
+    return Math.round(km) + " km";
+  }
+
   function drawFortLabels() {
-    if (gameMode !== "fortress" || !forts.length) return;
+    if (!forts.length) return;
     var god = camMode === "god";
     var fs = god ? 14 : 12;
     ctx.font = (god ? "600 " : "500 ") + fs + "px " + LABEL_FONT;
@@ -2497,11 +2565,80 @@
     }
   }
 
+  // 城市罗盘：最近的未建成城市在视野外时，在屏幕边缘给出方向与距离。
+  // 地图有 1 万多像素宽，没有指引基本等于「城市失踪」，这是玩家反馈最多的痛点。
+  function drawCityCompass() {
+    if (!forts.length) return;
+    var target = null, bestD = Infinity;
+    for (var i = 0; i < forts.length; i++) {
+      var f = forts[i];
+      var d = Math.hypot(f.x - camX, f.y - camY);
+      // 已建成的要塞优先；全建成后指向最近的任意要塞
+      var weight = f.built ? d + 1e7 : d;
+      if (weight < bestD) { bestD = weight; target = f; }
+    }
+    if (!target) return;
+    bestD = Math.hypot(target.x - camX, target.y - camY);
+
+    var p = worldToScreen(target.x, target.y);
+    var m = 62;
+    if (p.x > m && p.x < W - m && p.y > m && p.y < H - m) return;   // 已在画面内，不必指
+
+    var cx = W / 2, cy = H / 2;
+    var dx = p.x - cx, dy = p.y - cy;
+    var kx = dx === 0 ? Infinity : (W / 2 - m) / Math.abs(dx);
+    var ky = dy === 0 ? Infinity : (H / 2 - m) / Math.abs(dy);
+    var k = Math.min(kx, ky) || 1;
+    var ax = cx + dx * k, ay = cy + dy * k;
+    var ang = Math.atan2(dy, dx);
+
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(ang);
+    ctx.fillStyle = target.built ? "rgba(255,210,0,0.92)" : "rgba(232,208,120,0.95)";
+    ctx.beginPath();
+    ctx.moveTo(12, 0); ctx.lineTo(-7, -7); ctx.lineTo(-7, 7);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    var label = (target.built ? "要塞 " : "") + target.name + " " + fmtKm(bestD);
+    ctx.font = "600 12px " + LABEL_FONT;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    var lx = clamp(ax - Math.cos(ang) * 34, 46, W - 46);
+    var ly = clamp(ay - Math.sin(ang) * 34, 14, H - 14);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.78)";
+    ctx.strokeText(label, lx, ly);
+    ctx.fillStyle = target.built ? "#ffe680" : "#e8d078";
+    ctx.fillText(label, lx, ly);
+  }
+
   /* ==================== 小地图 / 大地图 / 缩放 ==================== */
 
+  // 缩放档位：跟随时是正常视野范围；上帝视角要多出「全局视野」档，
+  // 否则地图有 1 万多像素宽，按 0.92 的比例滚轮要滚几十次才能看到全欧洲。
+  var ZOOM_FOLLOW = [0.7, 0.85, 1.0, 1.2, 1.4];
+  var ZOOM_GOD = [0.07, 0.1, 0.15, 0.22, 0.35, 0.5, 0.7, 1.0, 1.4];
+  var GOD_ZOOM = 0.15;         // 进上帝视角时的默认倍率：一眼看到大半个欧洲
+
+  function zoomSteps() { return camMode === "god" ? ZOOM_GOD : ZOOM_FOLLOW; }
+
   function setZoom(z) {
-    zoom = clamp(z, 0.7, 1.4);
-    zoomVal.textContent = zoom.toFixed(1) + "×";
+    var steps = zoomSteps();
+    zoom = clamp(z, steps[0], steps[steps.length - 1]);
+    zoomVal.textContent = (zoom >= 0.2 ? zoom.toFixed(1) : zoom.toFixed(2)) + "×";
+  }
+
+  function stepZoom(dir) {
+    var steps = zoomSteps();
+    var i = dir > 0 ? steps.length - 1 : 0;
+    if (dir > 0) {
+      for (var a = 0; a < steps.length; a++) if (steps[a] > zoom + 1e-3) { i = a; break; }
+    } else {
+      for (var b = steps.length - 1; b >= 0; b--) if (steps[b] < zoom - 1e-3) { i = b; break; }
+    }
+    setZoom(steps[i]);
   }
 
   /* ==================== 游戏速度（时间倍速） ==================== */
@@ -2583,8 +2720,8 @@
     g.lineWidth = 1;
     g.strokeRect(a.x, a.y, Math.max(3, b.x - a.x), Math.max(3, b.y - a.y));
 
-    // 防线模式：在地图上标出各据点（亮色=已建成，暗色=废墟）
-    if (gameMode === "fortress" && forts.length) {
+    // 地图上的据点（亮色=已建成，暗色=废墟），两种模式都标出来当地标
+    if (forts.length) {
       g.textAlign = "left";
       g.textBaseline = "middle";
       if (big) g.font = "600 12px " + LABEL_FONT;
@@ -2626,16 +2763,29 @@
     g.arc(p.x, p.y, 3, 0, 6.2832);
     g.fill();
 
-    // 小地图宽度有限，标全 12 座城会挤成一团，只在底部提示离你最近的那座
-    if (!big && gameMode === "fortress" && forts.length) {
+    // 小地图宽度有限，标全 12 座城会挤成一团：只提示最近的一座，并画出方位与距离
+    if (!big && forts.length) {
       var nf = nearestFort(camX, camY);
       if (nf) {
-        var txt = "最近 " + nf.name + (nf.built ? " · 已建成" : " · 废墟");
+        var np = worldToMap(nf.x, nf.y, w, h);
+        g.save();
+        g.setLineDash([2, 2]);
+        g.strokeStyle = "rgba(255,210,0,0.5)";
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(p.x, p.y);
+        g.lineTo(np.x, np.y);
+        g.stroke();
+        g.restore();
+        g.fillStyle = nf.built ? "#ffd200" : "rgba(255,210,0,0.65)";
+        g.fillRect(np.x - 2.5, np.y - 2.5, 5, 5);
+
+        var txt = "最近 " + nf.name + " · " + fmtKm(Math.hypot(nf.x - camX, nf.y - camY));
         g.font = "500 10px " + LABEL_FONT;
         g.textAlign = "left";
         g.textBaseline = "bottom";
         var tw = g.measureText(txt).width;
-        g.fillStyle = "rgba(8,10,12,0.70)";
+        g.fillStyle = "rgba(8,10,12,0.72)";
         g.fillRect(3, h - 16, tw + 10, 14);
         g.fillStyle = nf.built ? "#ffe680" : "rgba(232,218,172,0.92)";
         g.fillText(txt, 8, h - 4);
@@ -2858,6 +3008,9 @@
     }
 
     ctx.restore();
+
+    // 城市罗盘：画在最上层（屏幕空间），不被敌人和地形遮挡
+    drawCityCompass();
 
     // 触屏摇杆
     if (stick.active) {
@@ -3083,12 +3236,12 @@
     });
   });
 
-  document.getElementById("zoomIn").addEventListener("click", function () { setZoom(zoom + 0.1); });
-  document.getElementById("zoomOut").addEventListener("click", function () { setZoom(zoom - 0.1); });
+  document.getElementById("zoomIn").addEventListener("click", function () { stepZoom(1); });
+  document.getElementById("zoomOut").addEventListener("click", function () { stepZoom(-1); });
   mapScreen.addEventListener("click", function (e) { if (e.target === mapScreen) toggleMap(); });
   cv.addEventListener("wheel", function (e) {
     e.preventDefault();
-    setZoom(zoom * (e.deltaY > 0 ? 0.92 : 1.08));
+    stepZoom(e.deltaY > 0 ? -1 : 1);
   }, { passive: false });
 
   window.addEventListener("resize", resize);
@@ -3103,6 +3256,9 @@
       heroWeapon: currentHero ? currentHero.weapon : null,
       terrainChunks: chunkCache.size,
       zoom: Math.round(zoom * 100) / 100,
+      zoomMin: zoomSteps()[0],
+      zoomMax: zoomSteps()[zoomSteps().length - 1],
+      stratReady: !!stratBase,
       speed: speedMul,
       speedSteps: SPEED_STEPS.slice(),
       minimapReady: !!miniBase,
@@ -3124,6 +3280,15 @@
       finalTimer: Math.round(finalTimer),
       time: Math.round(time * 10) / 10,
       enemies: enemies.length,
+      combatR: Math.round(combatRange()),   // 战场有效半径（有上限，不随全局视野无限放大）
+      enemyFar: (function () {   // 最远敌人的距离：用来验证战场半径没有被全局视野一起放大
+        var m = 0;
+        for (var i = 0; i < enemies.length; i++) {
+          var d = Math.hypot(enemies[i].x - P.x, enemies[i].y - P.y);
+          if (d > m) m = d;
+        }
+        return Math.round(m);
+      })(),
       bullets: bullets.length,
       gems: gems.length,
       kills: kills,
@@ -3153,6 +3318,9 @@
     syncHud();
     return { xp: xp, level: level, pending: pendingLevels };
   };
+
+  // 调试探针：清空场上敌人，便于自动化测试观察「新敌人在哪刷新」
+  window.__CLEAR_ENEMIES = function () { enemies.length = 0; return 0; };
 
   window.__AI_STYLES = AI_STYLES;   // 供自动化测试核对各风格参数
   // 调试探针：直接发放建材，便于自动化测试走完建造/修缮流程
