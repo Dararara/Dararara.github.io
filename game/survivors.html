@@ -606,7 +606,9 @@
     （能看见大半个欧洲，滚轮可继续拉远到 0.07× 看全图）<br>
     按 <strong style="color:var(--accent)">F</strong> 或右下角按钮切换
     <strong style="color:var(--accent)">1× / 2× / 3× / 5×</strong> 游戏速度 —— 刷怪、武器冷却、
-    波次推进全部同步加速，适合托管挂机快速推进防线
+    波次推进全部同步加速，适合托管挂机快速推进防线<br>
+    地图四周有<b style="color:#ffd200">金色虚线边界</b>，跑出去就是没有地形的虚空海 ——
+    玩家和敌人都出不去，托管 AI 也会主动避开边缘
   </div>
 </div>
 
@@ -684,13 +686,13 @@
     { name: "罗马",       lon: 12.50, lat: 41.90, bonus: { maxHp: 30 },    bonusText: "最大生命 +30" },
     { name: "维也纳",     lon: 16.40, lat: 48.20, bonus: { area: 0.10 },   bonusText: "攻击范围 +10%" },
     { name: "华沙",       lon: 21.00, lat: 52.20, bonus: { speed: 0.06 },  bonusText: "移动速度 +6%" },
-    { name: "基辅",       lon: 30.50, lat: 50.50, bonus: { pickup: 0.30 }, bonusText: "拾取范围 +30%" },
+    { name: "基辅",       lon: 28.00, lat: 50.50, bonus: { pickup: 0.30 }, bonusText: "拾取范围 +30%" },
     { name: "柏林",       lon: 13.40, lat: 52.50, bonus: { xpGain: 0.15 }, bonusText: "经验获取 +15%" },
     { name: "巴黎",       lon: 2.35,  lat: 48.90, bonus: { hpRegen: 0.6 }, bonusText: "生命恢复 +0.6/秒" },
     { name: "马德里",     lon: -3.70, lat: 40.40, bonus: { dmg: 0.08 },    bonusText: "伤害 +8%" },
     { name: "伦敦",       lon: -0.13, lat: 51.50, bonus: { cd: -0.06 },    bonusText: "攻击冷却 -6%" },
     { name: "斯德哥尔摩", lon: 18.10, lat: 59.30, bonus: { maxHp: 20 },    bonusText: "最大生命 +20" },
-    { name: "莫斯科",     lon: 37.60, lat: 55.75, bonus: { area: 0.08 },   bonusText: "攻击范围 +8%" }
+    { name: "莫斯科",     lon: 31.80, lat: 55.75, bonus: { area: 0.08 },   bonusText: "攻击范围 +8%" }
   ];
 
   var FORT_RANGE = 240;        // 要塞生效半径
@@ -1077,6 +1079,10 @@
       if (tk === "deep") lure -= 4.0;                             // 深水持续掉血，强烈规避
       if (P.hp / P.maxHp < 0.35 && tk === "water") lure += 3.2;   // 残血时的求生本能
 
+      // 地图边界：越靠边越「危险」，否则托管会一路贴着边缘跑到图外
+      var eg = mapEdge(P.x + dx * 300, P.y + dy * 300);
+      if (eg < 900) danger += (1 - Math.max(eg, 0) / 900) * 5.5;
+
       // 防线模式：朝待建 / 待修的据点靠拢，优先于一般游走
       if (fortGoal) {
         var fgx = fortGoal.x - P.x, fgy = fortGoal.y - P.y;
@@ -1100,16 +1106,39 @@
 
   /* ==================== 防线模式：要塞 ==================== */
 
+  // 手绘的海陆矩阵难免有偏差，城市坐标可能正好落在水里。
+  // 落水就朝外找最近的岸边：否则玩家跑来建城时会一直泡在深水里掉血，
+  // 而且「建在海里的要塞」本身就很荒谬。
+  function snapToLand(x, y) {
+    function dry(t) { return t !== "water" && t !== "deep" && t !== "river"; }
+    if (dry(terrainKind(x, y))) return { x: x, y: y };
+    for (var r = 48; r <= 288; r += 48) {
+      for (var a = 0; a < 16; a++) {
+        var ang = a * Math.PI / 8;
+        var nx = x + Math.cos(ang) * r, ny = y + Math.sin(ang) * r;
+        if (dry(terrainKind(nx, ny))) {
+          var o = { x: nx, y: ny };
+          clampToMap(o, MAP_PAD);
+          return o;
+        }
+      }
+    }
+    return { x: x, y: y };
+  }
+
   function buildForts() {
     forts = [];
     for (var i = 0; i < CITIES.length; i++) {
       var c = CITIES[i];
+      var wx = (c.lon - GEO_LON) * DEG;
+      var wy = (GEO_LAT - c.lat) * DEG;
+      var place = snapToLand(wx, wy);
       forts.push({
         name: c.name,
         lon: c.lon,
         lat: c.lat,
-        x: (c.lon - GEO_LON) * DEG,
-        y: (GEO_LAT - c.lat) * DEG,
+        x: place.x,
+        y: place.y,
         bonus: c.bonus,
         bonusText: c.bonusText,
         built: false, hp: 0, cool: 0, flash: 0
@@ -1310,6 +1339,10 @@
     if (keys.ArrowRight || keys.d || keys.D) godX += sp;
     if (keys.ArrowUp || keys.w || keys.W) godY -= sp;
     if (keys.ArrowDown || keys.s || keys.S) godY += sp;
+    // 相机也不许飘到地图外太远（留一点余量让边界线本身可见）
+    var r = mapWorldRect();
+    godX = clamp(godX, r.x - 240, r.x + r.w + 240);
+    godY = clamp(godY, r.y - 240, r.y + r.h + 240);
     camX = godX;
     camY = godY;
   }
@@ -2010,6 +2043,17 @@
       P.x += mv.x * sp * dt;
       P.y += mv.y * sp * dt;
     }
+    // 不能跑出地图：外面是没有地形的虚空，跑出去就再也回不来了
+    clampToMap(P, MAP_PAD);
+    if (mapEdge(P.x, P.y) < MAP_PAD + 1) {
+      edgeWarnTimer -= dt;
+      if (edgeWarnTimer <= 0) {
+        edgeWarnTimer = 5;
+        notify("已抵达地图边界 · 再往外就是虚空海");
+      }
+    } else {
+      edgeWarnTimer = 0;
+    }
     if (P.invul > 0) P.invul -= dt;
     if (P.hitFlash > 0) P.hitFlash -= dt;
     if (camMode === "god") updateGodCam(dt);
@@ -2070,6 +2114,7 @@
       }
       e.x += nx * e.speed * emv * fortMul * dt;
       e.y += ny * e.speed * emv * fortMul * dt;
+      clampToMap(e, 20);   // 敌人也不许待在界外，否则会在看不见的地方打玩家
       e.wob += dt * 6;
       if (e.hitCd > 0) e.hitCd -= dt;
       if (e.flash > 0) e.flash -= dt;
@@ -2522,6 +2567,38 @@
     };
   }
 
+  /* ==================== 地图边界 ====================
+     出了这张图就是没有地形的虚空公海，托管 AI 会一路往外跑跑不回来，
+     所以玩家、敌人、相机都要被限制在图内，并给 AI 一个「边缘危险」的信号。 */
+
+  var MAP_PAD = 80;          // 玩家距离地图边缘至少保留这么多像素
+  var edgeWarnTimer = 0;     // 贴边提示节流
+
+  // 距离最近地图边缘的像素数（负数表示已经出界）
+  function mapEdge(x, y) {
+    var r = mapWorldRect();
+    return Math.min(x - r.x, r.x + r.w - x, y - r.y, r.y + r.h - y);
+  }
+
+  function clampToMap(o, pad) {
+    var r = mapWorldRect();
+    o.x = clamp(o.x, r.x + pad, r.x + r.w - pad);
+    o.y = clamp(o.y, r.y + pad, r.y + r.h - pad);
+  }
+
+  // 地图边界线：让玩家一眼看出「跑出去就是虚空」
+  function drawMapBorder() {
+    var r = mapWorldRect();
+    var a = worldToScreen(r.x, r.y);
+    var b = worldToScreen(r.x + r.w, r.y + r.h);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,210,0,0.22)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([14, 10]);
+    ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    ctx.restore();
+  }
+
   function getStratBase() {
     if (stratBase) return stratBase;
     var w = 300, h = 240;
@@ -2913,6 +2990,7 @@
 
     // 地形地图：程序化生成 + 分块缓存，只绘制视野内的块
     drawTerrain();
+    drawMapBorder();     // 地图边界线
 
     // 防线模式的据点（废墟 / 要塞）
     drawForts();
@@ -3366,6 +3444,18 @@
       bigmapReady: !!bigBase,
       mapOpen: state === "map",
       terrain: curTerrain,
+      pos: [Math.round(P.x), Math.round(P.y)],
+      posEdge: Math.round(mapEdge(P.x, P.y)),   // 玩家距地图边缘的像素数
+      cam: [Math.round(camX), Math.round(camY)],
+      mapRect: (function () {
+        var r = mapWorldRect();
+        return [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)];
+      })(),
+      fortEdges: forts.map(function (f) { return Math.round(mapEdge(f.x, f.y)); }),
+      fortPos: forts.map(function (f) {
+        return [Math.round((GEO_LON + f.x / DEG) * 100) / 100,
+                Math.round((GEO_LAT - f.y / DEG) * 100) / 100];
+      }),
       terrainMul: [terrMul.speed, terrMul.area, terrMul.cd, terrMul.pickup],
       aiStyle: (currentHero && currentHero.ai) || null,
       aiRange: (AI_STYLES[(currentHero && currentHero.ai) || "balanced"] || AI_STYLES.balanced).idealRange,
